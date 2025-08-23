@@ -4,6 +4,7 @@ This document outlines the technical architecture and specifications for EventCo
 
 ## Directory Structure
 
+```
 eventconnect/
 ├── packages/
 │   ├── shared-types/              # KEEP - essential
@@ -21,6 +22,7 @@ eventconnect/
 │       ├── components/            # Essential components only
 │       ├── pages/                 # 3-4 key pages max
 │       └── hooks/                 # Core hooks only
+```
 
 ## Core Technical Features
 
