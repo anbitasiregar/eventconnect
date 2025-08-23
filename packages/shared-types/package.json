@@ -1,0 +1,16 @@
+{
+  "name": "@eventconnect/shared-types",
+  "version": "1.0.0",
+  "description": "Shared TypeScript types for EventConnect",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.2.2"
+  }
+}

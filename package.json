@@ -1,0 +1,36 @@
+{
+  "name": "eventconnect",
+  "version": "1.0.0",
+  "description": "AI-powered event planning platform with Chrome extension and Google Sheets integration",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "src/extension",
+    "src/api",
+    "src/web"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\" \"npm run dev:extension\"",
+    "dev:api": "npm run dev --workspace=src/api",
+    "dev:web": "npm run dev --workspace=src/web",
+    "dev:extension": "npm run dev --workspace=src/extension",
+    "build": "npm run build --workspaces",
+    "build:extension": "npm run build --workspace=src/extension",
+    "build:web": "npm run build --workspace=src/web",
+    "build:api": "npm run build --workspace=src/api",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "type-check": "npm run type-check --workspaces"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.2.2",
+    "@types/node": "^20.8.0",
+    "eslint": "^8.51.0",
+    "prettier": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
