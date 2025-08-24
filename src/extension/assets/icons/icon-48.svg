@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <!-- Background circle -->
+  <circle cx="24" cy="24" r="22" fill="#4285f4" stroke="#fff" stroke-width="2"/>
+  
+  <!-- Calendar icon -->
+  <rect x="12" y="14.399999999999999" width="24" height="19.200000000000003" fill="white" rx="2"/>
+  <rect x="12" y="16.799999999999997" width="24" height="2.4000000000000004" fill="#4285f4"/>
+  
+  <!-- Event dot -->
+  <circle cx="31.200000000000003" cy="26.400000000000002" r="3.84" fill="#34a853"/>
+</svg>

@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "EventConnect - AI Event Planning Assistant",
+  "version": "1.0.0",
+  "description": "Chrome extension-first event planning with Google Sheets integration",
+  "permissions": [
+    "activeTab",
+    "storage", 
+    "identity",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://sheets.googleapis.com/*",
+    "https://www.googleapis.com/*",
+    "http://localhost:3000/*"
+  ],
+  "action": {
+    "default_popup": "popup/index.html",
+    "default_title": "EventConnect",
+    "default_icon": {
+      "16": "assets/icons/icon-16.png",
+      "48": "assets/icons/icon-48.png",
+      "128": "assets/icons/icon-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [{
+    "matches": ["<all_urls>"],
+    "js": ["content/content-script.js"],
+    "run_at": "document_idle"
+  }],
+  "web_accessible_resources": [
+    {
+      "resources": ["popup/*", "assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "icons": {
+    "16": "assets/icons/icon-16.png",
+    "48": "assets/icons/icon-48.png",
+    "128": "assets/icons/icon-128.png"
+  }
+}

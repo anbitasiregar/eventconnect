@@ -48,4 +48,4 @@ coverage/
 *.tsbuildinfo
 
 # Prompts
-.docs/prompts.md
+.docs/prompts
