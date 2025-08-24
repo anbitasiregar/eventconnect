@@ -22,7 +22,9 @@ export type MessageType =
   | 'APPEND_LOG'
   // Actions
   | 'EXECUTE_ACTION'
-  | 'GET_ACTION_SUGGESTIONS';
+  | 'GET_ACTION_SUGGESTIONS'
+  // User info
+  | 'GET_USER_INFO';
 
 export interface ExtensionMessage {
   type: MessageType;
