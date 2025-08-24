@@ -4,12 +4,25 @@
  */
 
 export type MessageType = 
+  // Authentication messages
   | 'AUTH_STATUS' 
+  | 'AUTH_LOGIN'
+  | 'AUTH_LOGOUT'
+  | 'AUTH_REFRESH'
+  // Legacy auth
   | 'LOGIN_REQUEST' 
   | 'LOGOUT_REQUEST'
+  // Event management
   | 'GET_CURRENT_EVENT' 
   | 'SET_CURRENT_EVENT'
-  | 'EXECUTE_ACTION';
+  | 'VALIDATE_SHEET'
+  // Sheet operations
+  | 'READ_EVENT_DATA'
+  | 'UPDATE_EVENT_DATA'
+  | 'APPEND_LOG'
+  // Actions
+  | 'EXECUTE_ACTION'
+  | 'GET_ACTION_SUGGESTIONS';
 
 export interface ExtensionMessage {
   type: MessageType;

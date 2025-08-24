@@ -9,6 +9,8 @@ interface ExtensionStorage {
   basicPreferences?: {
     autoApprove?: boolean;
   };
+  installedAt?: string;
+  extensionVersion?: string;
 }
 
 /**

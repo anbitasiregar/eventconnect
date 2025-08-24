@@ -7,21 +7,29 @@ export interface ExtensionMessage {
 }
 
 export enum MessageType {
-  // Authentication
+  // Authentication messages
+  AUTH_LOGIN = 'auth_login',
+  AUTH_LOGOUT = 'auth_logout',
   AUTH_STATUS = 'auth_status',
-  LOGIN_REQUEST = 'login_request',
-  LOGOUT_REQUEST = 'logout_request',
+  AUTH_REFRESH = 'auth_refresh',
   
-  // Events
+  // Event management
   GET_CURRENT_EVENT = 'get_current_event',
   SET_CURRENT_EVENT = 'set_current_event',
-  CREATE_EVENT = 'create_event',
+  VALIDATE_SHEET = 'validate_sheet',
   
-  // Agent Actions
-  EXECUTE_AGENT_ACTION = 'execute_agent_action',
-  APPROVE_ACTION = 'approve_action',
-  REJECT_ACTION = 'reject_action',
-  GET_PENDING_ACTIONS = 'get_pending_actions',
+  // Sheet operations
+  READ_EVENT_DATA = 'read_event_data',
+  UPDATE_EVENT_DATA = 'update_event_data',
+  APPEND_LOG = 'append_log',
+  
+  // Action execution
+  EXECUTE_ACTION = 'execute_action',
+  GET_ACTION_SUGGESTIONS = 'get_action_suggestions',
+  
+  // Legacy support
+  LOGIN_REQUEST = 'login_request',
+  LOGOUT_REQUEST = 'logout_request',
   
   // Page Context
   ANALYZE_PAGE = 'analyze_page',

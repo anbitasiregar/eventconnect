@@ -1,177 +1,233 @@
 /**
  * EventConnect Extension Service Worker
- * Handles background operations, authentication, and API communication
+ * Enhanced with full authentication, API communication, and Google Sheets integration
  */
 
-import { setupMessageListener, ExtensionMessage } from '../shared/messaging';
+import { GoogleAuthService } from './google-auth';
+import { ApiClient } from './api-client';
+import { GoogleSheetsService } from './sheets-service';
+import { MessageHandler } from './message-handler';
+import { config, validateConfig } from './config';
+import { Logger, initializeLogger } from '../shared/logger';
 import { setStorageItem, getStorageItem } from '../shared/storage';
+
+// Initialize services
+let authService: GoogleAuthService;
+let apiClient: ApiClient;
+let sheetsService: GoogleSheetsService;
+let messageHandler: MessageHandler;
 
 // Service worker installation
 chrome.runtime.onInstalled.addListener(async (details) => {
-  console.log('EventConnect extension installed:', details.reason);
-  
   try {
-    // Initialize default storage values
-    await initializeStorage();
+    // Initialize logging first
+    initializeLogger();
+    Logger.info('EventConnect extension installed', { reason: details.reason });
+
+    // Validate configuration
+    if (!validateConfig()) {
+      throw new Error('Configuration validation failed');
+    }
+
+    // Initialize services
+    await initializeServices();
     
-    // Open onboarding web app for new installations
     if (details.reason === 'install') {
-      await openOnboardingApp();
+      // First-time installation
+      await initializeExtension();
+      await openOnboardingFlow();
+    } else if (details.reason === 'update') {
+      // Extension update
+      await migrateStorageIfNeeded();
     }
     
-    console.log('Extension initialization completed');
+    Logger.info('Extension initialization completed successfully');
   } catch (error) {
-    console.error('Extension initialization failed:', error);
+    Logger.error('Extension initialization failed', error as Error);
   }
 });
 
 // Service worker startup
 chrome.runtime.onStartup.addListener(async () => {
-  console.log('EventConnect extension started');
-  
   try {
-    // Check authentication status
-    const authToken = await getStorageItem('authToken');
-    if (authToken) {
-      console.log('User authentication found');
-      // TODO: Validate token in Part B
-    } else {
-      console.log('No user authentication found');
+    Logger.info('EventConnect extension started');
+    
+    // Initialize services if not already done
+    if (!authService) {
+      await initializeServices();
     }
+    
+    // Validate authentication state
+    await validateAuthenticationState();
+    
+    // Refresh current event context
+    await refreshCurrentEventContext();
+    
+    Logger.info('Extension startup completed');
   } catch (error) {
-    console.error('Startup check failed:', error);
+    Logger.error('Extension startup failed', error as Error);
   }
 });
 
-// Set up message listener for component communication
-setupMessageListener(async (message: ExtensionMessage, sender, sendResponse) => {
-  console.log('Background received message:', message.type);
-  
-  try {
-    switch (message.type) {
-      case 'AUTH_STATUS':
-        return await handleAuthStatus();
-      
-      case 'LOGIN_REQUEST':
-        return await handleLoginRequest();
-      
-      case 'LOGOUT_REQUEST':
-        return await handleLogoutRequest();
-      
-      case 'GET_CURRENT_EVENT':
-        return await handleGetCurrentEvent();
-      
-      case 'SET_CURRENT_EVENT':
-        return await handleSetCurrentEvent(message.payload);
-      
-      case 'EXECUTE_ACTION':
-        return await handleExecuteAction(message.payload);
-      
-      default:
-        throw new Error(`Unknown message type: ${message.type}`);
-    }
-  } catch (error) {
-    console.error(`Error handling message ${message.type}:`, error);
-    return { error: error instanceof Error ? error.message : 'Unknown error' };
-  }
+// Message routing with enhanced handler
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  handleAsyncMessage(message, sender)
+    .then(sendResponse)
+    .catch(error => {
+      Logger.error('Message handling error', error as Error, { 
+        messageType: message.type,
+        requestId: message.requestId 
+      });
+      sendResponse({ error: (error as Error).message });
+    });
+  return true; // Keep message channel open for async response
 });
+
+async function handleAsyncMessage(message: any, sender: chrome.runtime.MessageSender) {
+  // Ensure services are initialized
+  if (!messageHandler) {
+    await initializeServices();
+  }
+  
+  return await messageHandler.handleMessage(message, sender);
+}
 
 /**
- * Initialize storage with default values
+ * Initialize all extension services
  */
-async function initializeStorage(): Promise<void> {
+async function initializeServices(): Promise<void> {
   try {
-    // Set default preferences if not exists
+    Logger.info('Initializing extension services');
+
+    // Initialize authentication service
+    authService = new GoogleAuthService();
+    
+    // Initialize API client
+    apiClient = new ApiClient(config.apiBaseUrl, authService);
+    
+    // Initialize Google Sheets service
+    sheetsService = new GoogleSheetsService(() => authService.getValidToken());
+    
+    // Initialize message handler
+    messageHandler = new MessageHandler(authService, apiClient, sheetsService);
+    
+    Logger.info('All services initialized successfully');
+  } catch (error) {
+    Logger.error('Failed to initialize services', error as Error);
+    throw error;
+  }
+}
+
+/**
+ * Initialize extension on first install
+ */
+async function initializeExtension(): Promise<void> {
+  try {
+    Logger.info('Performing first-time extension initialization');
+    
+    // Set default preferences
     const preferences = await getStorageItem('basicPreferences');
     if (!preferences) {
       await setStorageItem('basicPreferences', {
         autoApprove: false
       });
     }
+    
+    // Set installation timestamp
+    await setStorageItem('installedAt', new Date().toISOString());
+    
+    Logger.info('Extension initialization completed');
   } catch (error) {
-    console.error('Failed to initialize storage:', error);
+    Logger.error('Extension initialization failed', error as Error);
     throw error;
   }
 }
 
 /**
- * Open onboarding web application
+ * Open onboarding flow for new users
  */
-async function openOnboardingApp(): Promise<void> {
+async function openOnboardingFlow(): Promise<void> {
   try {
-    const onboardingUrl = 'http://localhost:5173'; // Web app URL
+    const onboardingUrl = config.isDevelopment 
+      ? 'http://localhost:5173' 
+      : 'https://app.eventconnect.com';
+    
     await chrome.tabs.create({ url: onboardingUrl });
+    Logger.info('Onboarding flow opened');
   } catch (error) {
-    console.error('Failed to open onboarding app:', error);
+    Logger.error('Failed to open onboarding flow', error as Error);
   }
 }
 
 /**
- * Handle authentication status check
+ * Migrate storage if needed for extension updates
  */
-async function handleAuthStatus(): Promise<{ authenticated: boolean; token?: string }> {
-  const authToken = await getStorageItem<string>('authToken');
-  return {
-    authenticated: !!authToken,
-    token: authToken || undefined
-  };
-}
-
-/**
- * Handle login request - placeholder for Part B
- */
-async function handleLoginRequest(): Promise<{ success: boolean; message: string }> {
-  // TODO: Implement Google OAuth flow in Part B
-  console.log('Login request received - will implement in Part B');
-  return {
-    success: false,
-    message: 'Login functionality will be implemented in Part B'
-  };
-}
-
-/**
- * Handle logout request
- */
-async function handleLogoutRequest(): Promise<{ success: boolean }> {
+async function migrateStorageIfNeeded(): Promise<void> {
   try {
-    await setStorageItem('authToken', null);
-    await setStorageItem('currentEventId', null);
-    return { success: true };
+    Logger.info('Checking for storage migration needs');
+    
+    // Get current version from storage
+    const storedVersion = await getStorageItem<string>('extensionVersion');
+    const currentVersion = chrome.runtime.getManifest().version;
+    
+    if (storedVersion !== currentVersion) {
+      Logger.info('Extension version changed, performing migration', {
+        from: storedVersion,
+        to: currentVersion
+      });
+      
+      // Perform any necessary migrations here
+      // For now, just update the version
+      await setStorageItem('extensionVersion', currentVersion);
+      
+      Logger.info('Storage migration completed');
+    }
   } catch (error) {
-    console.error('Logout failed:', error);
-    return { success: false };
+    Logger.error('Storage migration failed', error as Error);
   }
 }
 
 /**
- * Handle get current event
+ * Validate authentication state on startup
  */
-async function handleGetCurrentEvent(): Promise<{ eventId: string | null }> {
-  const currentEventId = await getStorageItem<string>('currentEventId');
-  return { eventId: currentEventId };
-}
-
-/**
- * Handle set current event
- */
-async function handleSetCurrentEvent(payload: { eventId: string }): Promise<{ success: boolean }> {
+async function validateAuthenticationState(): Promise<void> {
   try {
-    await setStorageItem('currentEventId', payload.eventId);
-    return { success: true };
+    Logger.info('Validating authentication state');
+    
+    const isAuthenticated = await authService.isAuthenticated();
+    
+    if (isAuthenticated) {
+      Logger.info('User is authenticated');
+      
+      // Validate token with backend
+      const isValid = await apiClient.auth.validateToken();
+      if (!isValid) {
+        Logger.warn('Token validation failed, user may need to re-authenticate');
+      }
+    } else {
+      Logger.info('User is not authenticated');
+    }
   } catch (error) {
-    console.error('Failed to set current event:', error);
-    return { success: false };
+    Logger.error('Authentication validation failed', error as Error);
   }
 }
 
 /**
- * Handle execute action - placeholder for Part B/C
+ * Refresh current event context
  */
-async function handleExecuteAction(payload: any): Promise<{ success: boolean; message: string }> {
-  // TODO: Implement action execution in later parts
-  console.log('Action execution request received:', payload);
-  return {
-    success: false,
-    message: 'Action execution will be implemented in later parts'
-  };
+async function refreshCurrentEventContext(): Promise<void> {
+  try {
+    Logger.info('Refreshing current event context');
+    
+    const currentEvent = await apiClient.events.getCurrentEvent();
+    
+    if (currentEvent) {
+      await setStorageItem('currentEventId', currentEvent.id);
+      Logger.info('Current event context updated', { eventId: currentEvent.id });
+    } else {
+      Logger.info('No current event found');
+    }
+  } catch (error) {
+    Logger.error('Failed to refresh event context', error as Error);
+  }
 }
