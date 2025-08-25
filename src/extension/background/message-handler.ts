@@ -173,19 +173,62 @@ export class MessageHandler {
         return { event: currentEvent };
 
       case 'SET_CURRENT_EVENT':
-        if (!message.payload?.eventId) {
-          throw new Error('Event ID required');
+        case 'SET_CURRENT_EVENT':
+        try {
+          const { eventId } = message.payload;
+          if (!eventId) {
+            throw new Error('Event ID required');
+          }
+          
+          // Store current event ID
+          await chrome.storage.local.set({ 
+            currentEventId: eventId,
+            currentEventTimestamp: Date.now()
+          });
+          
+          // Clear cache to force refresh of event data
+          this.clearCache();
+          
+          return { success: true, eventId };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { success: false, error: errorMessage };
         }
-        await this.apiClient.events.setCurrentEvent(message.payload.eventId);
-        this.clearEventCache(); // Clear event-related cache
-        return { success: true };
 
-      case 'VALIDATE_SHEET':
-        if (!message.payload?.sheetId) {
-          throw new Error('Sheet ID required');
-        }
-        const isValid = await this.apiClient.events.validateEventSheet(message.payload.sheetId);
-        return { valid: isValid };
+        case 'VALIDATE_SHEET':
+          try {
+            const { sheetId } = message.payload;
+            if (!sheetId) {
+              throw new Error('Sheet ID required');
+            }
+            
+            console.log('Validating sheet access:', sheetId);
+            
+            // Use the sheets service to validate access
+            const isValid = await this.sheetsService.validateSheetStructure(sheetId);
+            
+            if (isValid) {
+              // Try to get sheet name for better UX
+              const sheetInfo = await this.sheetsService.getSheetName(sheetId);
+              return { 
+                success: true, 
+                message: 'Sheet validated successfully',
+                eventName: sheetInfo?.name || 'Event Dashboard'
+              };
+            } else {
+              return { 
+                success: false, 
+                error: 'Cannot access sheet. Please check sharing permissions and Sheet ID.' 
+              };
+            }
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.error('Sheet validation failed:', errorMessage);
+            return { 
+              success: false, 
+              error: `Sheet validation failed: ${errorMessage}` 
+            };
+          }
 
       default:
         throw new Error(`Unknown event message type: ${message.type}`);
@@ -203,7 +246,7 @@ export class MessageHandler {
         }
         const eventData = await this.sheetsService.readEventSheet(message.payload.sheetId);
         return { data: eventData };
-
+  
       case 'UPDATE_EVENT_DATA':
         if (!message.payload?.sheetId || !message.payload?.data) {
           throw new Error('Sheet ID and data required');
@@ -211,14 +254,16 @@ export class MessageHandler {
         await this.sheetsService.updateEventData(message.payload.sheetId, message.payload.data);
         this.clearSheetsCache(message.payload.sheetId); // Clear cache for this sheet
         return { success: true };
-
+  
       case 'APPEND_LOG':
         if (!message.payload?.sheetId || !message.payload?.entry) {
           throw new Error('Sheet ID and log entry required');
         }
         await this.sheetsService.appendToEventLog(message.payload.sheetId, message.payload.entry);
         return { success: true };
-
+  
+      // ADD THESE NEW CASES:
+  
       default:
         throw new Error(`Unknown sheets message type: ${message.type}`);
     }
@@ -277,7 +322,7 @@ export class MessageHandler {
    * Check if message type is sheets-related
    */
   private isSheetsMessage(type: string): boolean {
-    return ['READ_EVENT_DATA', 'UPDATE_EVENT_DATA', 'APPEND_LOG'].includes(type);
+    return ['READ_EVENT_DATA', 'UPDATE_EVENT_DATA', 'APPEND_LOG', 'SHEETS_'].includes(type);
   }
 
   /**

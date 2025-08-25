@@ -198,6 +198,36 @@ export class GoogleSheetsService {
   }
 
   /**
+   * Get sheet name
+   */
+  async getSheetName(sheetId: string): Promise<{ name: string } | null> {
+    try {
+      const token = await this.getAuthToken();
+      if (!token) return null;
+  
+      const response = await fetch(
+        `${GoogleSheetsService.API_BASE_URL}/${sheetId}?fields=properties.title`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+  
+      if (response.ok) {
+        const data = await response.json();
+        return { name: data.properties.title };
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Failed to get sheet info:', error);
+      return null;
+    }
+  }
+
+  /**
    * Read data from specific range in sheet
    */
   private async readRange(sheetId: string, range: string): Promise<any[][]> {
