@@ -21,6 +21,15 @@ interface ExtensionConfig {
   };
 }
 
+// Environment variables are replaced at build time by webpack DefinePlugin
+declare const process: {
+  env: {
+    NODE_ENV: string;
+    GOOGLE_CLIENT_ID: string;
+    API_BASE_URL: string;
+  };
+};
+
 /**
  * Get configuration based on environment
  */
@@ -32,7 +41,7 @@ function createConfig(): ExtensionConfig {
       ? 'http://localhost:3000' 
       : 'https://api.eventconnect.app',
     
-    googleClientId: process.env.GOOGLE_CLIENT_ID || 'your_google_client_id_here',
+    googleClientId: process.env.GOOGLE_CLIENT_ID || '554258518238-9fs00eer4665qggru39lfmi4o6jrq42n.apps.googleusercontent.com',
     
     isDevelopment,
     
@@ -64,7 +73,7 @@ export function validateConfig(): boolean {
     errors.push('API base URL is not configured');
   }
 
-  if (!config.googleClientId || config.googleClientId === 'your_google_client_id_here') {
+  if (!config.googleClientId || config.googleClientId === '554258518238-9fs00eer4665qggru39lfmi4o6jrq42n.apps.googleusercontent.com') {
     errors.push('Google Client ID is not configured');
   }
 

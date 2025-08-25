@@ -27,9 +27,16 @@ export const useAuth = () => {
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
       
-      const response = await sendMessageToBackground({
+      // Add timeout to prevent infinite loading
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Authentication check timed out')), 10000);
+      });
+      
+      const authPromise = sendMessageToBackground({
         type: 'AUTH_STATUS'
       });
+
+      const response = await Promise.race([authPromise, timeoutPromise]);
 
       if (response.error) {
         throw new Error(response.error);
@@ -41,12 +48,18 @@ export const useAuth = () => {
         isLoading: false
       }));
 
-      // If authenticated, get user info
+      // If authenticated, get user info (with timeout)
       if (response.authenticated) {
         try {
-          const userResponse = await sendMessageToBackground({
+          const userPromise = sendMessageToBackground({
             type: 'GET_USER_INFO'
           });
+          
+          const userTimeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('User info timeout')), 5000);
+          });
+          
+          const userResponse = await Promise.race([userPromise, userTimeoutPromise]);
           
           if (!userResponse.error) {
             setState(prev => ({

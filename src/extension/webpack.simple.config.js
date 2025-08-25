@@ -1,5 +1,6 @@
 const path = require('path');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
+const webpack = require('webpack');
 
 module.exports = {
   mode: 'development',
@@ -18,7 +19,24 @@ module.exports = {
   },
   
   resolve: {
-    extensions: ['.ts', '.tsx', '.js', '.jsx']
+    extensions: ['.ts', '.tsx', '.js', '.jsx'],
+    fallback: {
+      "process": false,
+      "buffer": false,
+      "path": false,
+      "os": false,
+      "crypto": false,
+      "fs": false,
+      "stream": false,
+      "util": false,
+      "url": false,
+      "querystring": false,
+      "http": false,
+      "https": false,
+      "net": false,
+      "tls": false,
+      "zlib": false
+    }
   },
   
   module: {
@@ -46,6 +64,11 @@ module.exports = {
         { from: 'popup/index.html', to: 'popup/index.html' },
         { from: 'assets', to: 'assets' }
       ]
+    }),
+    new webpack.DefinePlugin({
+      'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
+      'process.env.GOOGLE_CLIENT_ID': JSON.stringify(process.env.GOOGLE_CLIENT_ID || '554258518238-9fs00eer4665qggru39lfmi4o6jrq42n.apps.googleusercontent.com'),
+      'process.env.API_BASE_URL': JSON.stringify(process.env.API_BASE_URL || 'https://api.eventconnect.app')
     })
   ],
   

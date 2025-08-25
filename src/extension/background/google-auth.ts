@@ -6,6 +6,13 @@
 import { setStorageItem, getStorageItem } from '../shared/storage';
 import { Logger } from '../shared/logger';
 
+// Environment variables are replaced at build time by webpack DefinePlugin
+declare const process: {
+  env: {
+    GOOGLE_CLIENT_ID: string;
+  };
+};
+
 const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',      // Sheets read/write
   'https://www.googleapis.com/auth/calendar',          // Calendar integration
@@ -25,7 +32,7 @@ interface GoogleAuthToken {
 
 export class GoogleAuthService {
   private static readonly TOKEN_REFRESH_BUFFER = 5 * 60 * 1000; // 5 minutes in ms
-  private static readonly OAUTH_URL = 'https://accounts.google.com/oauth/authorize';
+  private static readonly OAUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
   
   /**
    * Authenticate user using Chrome Identity API
@@ -35,17 +42,25 @@ export class GoogleAuthService {
       Logger.info('Starting Google OAuth authentication flow');
 
       const authUrl = this.buildAuthUrl();
+      Logger.info('Auth URL built:', authUrl);
+      
+      Logger.info('Extension ID from Chrome:', chrome.runtime.id);
+      Logger.info('Expected redirect URI:', chrome.identity.getRedirectURL());
       
       const redirectUrl = await chrome.identity.launchWebAuthFlow({
         url: authUrl,
         interactive: true
       });
 
+      Logger.info('OAuth flow completed, redirect URL:', redirectUrl);
+
       if (!redirectUrl) {
         throw new Error('Authentication was cancelled by user');
       }
 
       const token = this.extractTokenFromUrl(redirectUrl);
+      Logger.info('Token extracted successfully');
+      
       const enrichedToken = this.enrichTokenWithExpiration(token);
       
       // Store token securely
@@ -62,10 +77,12 @@ export class GoogleAuthService {
           throw new Error('Authentication was cancelled. Please try again to access your Google account.');
         } else if (error.message.includes('access_denied')) {
           throw new Error('Access denied. EventConnect needs these permissions to manage your event data.');
+        } else if (error.message.includes('OAuth')) {
+          throw new Error('OAuth configuration error. Please check the extension setup.');
         }
       }
       
-      throw new Error('Authentication failed. Please check your internet connection and try again.');
+      throw new Error(`Authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -205,7 +222,7 @@ export class GoogleAuthService {
    */
   private buildAuthUrl(): string {
     const params = new URLSearchParams({
-      client_id: process.env.GOOGLE_CLIENT_ID || 'your_google_client_id',
+      client_id: process.env.GOOGLE_CLIENT_ID || '554258518238-9fs00eer4665qggru39lfmi4o6jrq42n.apps.googleusercontent.com',
       redirect_uri: chrome.identity.getRedirectURL(),
       response_type: 'token',
       scope: GOOGLE_SCOPES.join(' '),
@@ -276,6 +293,6 @@ export class GoogleAuthService {
    */
   private async getClientId(): Promise<string> {
     // In production, this should come from secure configuration
-    return process.env.GOOGLE_CLIENT_ID || 'your_google_client_id';
+    return process.env.GOOGLE_CLIENT_ID || '554258518238-9fs00eer4665qggru39lfmi4o6jrq42n.apps.googleusercontent.com';
   }
 }

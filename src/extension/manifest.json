@@ -14,6 +14,16 @@
     "https://www.googleapis.com/*",
     "http://localhost:3000/*"
   ],
+  "oauth2": {
+    "client_id": "554258518238-9fs00eer4665qggru39lfmi4o6jrq42n.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/calendar",
+      "https://www.googleapis.com/auth/gmail.send",
+      "https://www.googleapis.com/auth/drive.file",
+      "https://www.googleapis.com/auth/userinfo.profile"
+    ]
+  },
   "action": {
     "default_popup": "popup/index.html",
     "default_title": "EventConnect",
