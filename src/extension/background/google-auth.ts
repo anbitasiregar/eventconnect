@@ -27,104 +27,74 @@ interface GoogleAuthToken {
   expires_in: number;
   token_type: string;
   scope: string;
-  expires_at: number; // Calculated expiration timestamp
+  expires_at?: number; // Make this optional since Chrome handles expiration
 }
 
 export class GoogleAuthService {
   private static readonly TOKEN_REFRESH_BUFFER = 5 * 60 * 1000; // 5 minutes in ms
-  private static readonly OAUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
   
   /**
    * Authenticate user using Chrome Identity API
    */
   async authenticateUser(): Promise<GoogleAuthToken> {
     try {
-      Logger.info('Starting Google OAuth authentication flow');
-
-      const authUrl = this.buildAuthUrl();
-      Logger.info('Auth URL built:', authUrl);
+      console.log('Starting Chrome Identity API authentication...');
       
-      Logger.info('Extension ID from Chrome:', chrome.runtime.id);
-      Logger.info('Expected redirect URI:', chrome.identity.getRedirectURL());
-      
-      const redirectUrl = await chrome.identity.launchWebAuthFlow({
-        url: authUrl,
-        interactive: true
+      const result = await chrome.identity.getAuthToken({ 
+        interactive: true,
+        scopes: GOOGLE_SCOPES 
       });
-
-      Logger.info('OAuth flow completed, redirect URL:', redirectUrl);
-
-      if (!redirectUrl) {
-        throw new Error('Authentication was cancelled by user');
-      }
-
-      const token = this.extractTokenFromUrl(redirectUrl);
-      Logger.info('Token extracted successfully');
       
-      const enrichedToken = this.enrichTokenWithExpiration(token);
+      console.log('Raw token result:', result);
       
-      // Store token securely
-      await this.storeToken(enrichedToken);
-      
-      Logger.info('Google OAuth authentication successful');
-      return enrichedToken;
-      
-    } catch (error) {
-      Logger.error('Google OAuth authentication failed', error as Error);
-      
-      if (error instanceof Error) {
-        if (error.message.includes('cancelled')) {
-          throw new Error('Authentication was cancelled. Please try again to access your Google account.');
-        } else if (error.message.includes('access_denied')) {
-          throw new Error('Access denied. EventConnect needs these permissions to manage your event data.');
-        } else if (error.message.includes('OAuth')) {
-          throw new Error('OAuth configuration error. Please check the extension setup.');
+      // Extract token string from result - fix the undefined issue
+      let tokenString: string;
+      if (typeof result === 'string') {
+        tokenString = result;
+      } else if (result && typeof result === 'object' && 'token' in result) {
+        const token = result.token;
+        if (!token) {  // Check if token is undefined/empty
+          throw new Error('Empty token received from Chrome Identity API');
         }
+        tokenString = token;  // Now TypeScript knows it's not undefined
+      } else {
+        throw new Error('Invalid token format received from Chrome Identity API');
       }
       
-      throw new Error(`Authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  /**
-   * Refresh expired token using refresh token
-   */
-  async refreshToken(refreshToken: string): Promise<GoogleAuthToken> {
-    try {
-      Logger.info('Refreshing Google OAuth token');
-
-      const response = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          client_id: await this.getClientId(),
-          refresh_token: refreshToken,
-          grant_type: 'refresh_token'
-        })
+      if (!tokenString) {
+        throw new Error('No authentication token received from Google');
+      }
+      
+      console.log('Authentication successful, token received');
+      
+      const authToken: GoogleAuthToken = {
+        access_token: tokenString,
+        token_type: 'Bearer',
+        expires_in: 3600,
+        scope: GOOGLE_SCOPES.join(' '),
+        expires_at: Date.now() + (3600 * 1000)
+      };
+      
+      await chrome.storage.local.set({
+        'authToken': authToken,
+        'authTokenTimestamp': Date.now()
       });
-
-      if (!response.ok) {
-        throw new Error(`Token refresh failed: ${response.statusText}`);
-      }
-
-      const tokenData = await response.json();
-      const enrichedToken = this.enrichTokenWithExpiration(tokenData);
       
-      // Preserve refresh token if not provided in response
-      if (!enrichedToken.refresh_token) {
-        enrichedToken.refresh_token = refreshToken;
-      }
-      
-      await this.storeToken(enrichedToken);
-      
-      Logger.info('Token refresh successful');
-      return enrichedToken;
+      return authToken;
       
     } catch (error) {
-      Logger.error('Token refresh failed', error as Error);
-      throw new Error('Failed to refresh authentication. Please sign in again.');
+      console.error('Chrome Identity API authentication failed:', error);
+      
+      // Fix the error typing issue
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      if (errorMessage.includes('canceled') || errorMessage.includes('cancelled')) {
+        throw new Error('Sign-in was canceled. Please try again.');
+      } else if (errorMessage.includes('network')) {
+        throw new Error('Network error. Please check your connection and try again.');
+      } else {
+        throw new Error(`Authentication failed: ${errorMessage}`);
+      }
     }
   }
 
@@ -133,24 +103,10 @@ export class GoogleAuthService {
    */
   async isAuthenticated(): Promise<boolean> {
     try {
-      const token = await this.getStoredToken();
-      
-      if (!token) {
-        return false;
-      }
-
-      // Check if token is expired (with buffer)
-      const now = Date.now();
-      const isExpired = now >= (token.expires_at - GoogleAuthService.TOKEN_REFRESH_BUFFER);
-      
-      if (isExpired && !token.refresh_token) {
-        Logger.warn('Token expired and no refresh token available');
-        return false;
-      }
-
-      return true;
+      const token = await this.getValidToken();
+      return !!token;
     } catch (error) {
-      Logger.error('Authentication check failed', error as Error);
+      console.error('Auth check failed:', error);
       return false;
     }
   }
@@ -160,27 +116,25 @@ export class GoogleAuthService {
    */
   async logout(): Promise<void> {
     try {
-      Logger.info('Logging out user');
+      // Get current token for revocation
+      const stored = await chrome.storage.local.get('authToken');
       
-      // Clear stored token
-      await setStorageItem('authToken', null);
-      
-      // Revoke token with Google (optional, best practice)
-      const token = await this.getStoredToken();
-      if (token) {
-        try {
-          await fetch(`https://oauth2.googleapis.com/revoke?token=${token.access_token}`, {
-            method: 'POST'
-          });
-        } catch (error) {
-          Logger.warn('Token revocation failed (non-critical)', error as Error);
-        }
+      if (stored.authToken?.access_token) {
+        // Revoke token with Chrome Identity API
+        await chrome.identity.removeCachedAuthToken({ 
+          token: stored.authToken.access_token 
+        });
       }
       
-      Logger.info('Logout successful');
+      // Clear all stored auth data
+      await chrome.storage.local.remove(['authToken', 'authTokenTimestamp', 'currentEventId']);
+      
+      console.log('Logout successful');
+      
     } catch (error) {
-      Logger.error('Logout failed', error as Error);
-      throw new Error('Logout failed. Please try again.');
+      console.error('Logout error:', error);
+      // Still clear local storage even if revocation fails
+      await chrome.storage.local.remove(['authToken', 'authTokenTimestamp', 'currentEventId']);
     }
   }
 
@@ -189,48 +143,65 @@ export class GoogleAuthService {
    */
   async getValidToken(): Promise<string | null> {
     try {
-      const token = await this.getStoredToken();
+      const stored = await chrome.storage.local.get(['authToken', 'authTokenTimestamp']);
       
-      if (!token) {
-        Logger.warn('No stored token found');
-        return null;
+      if (stored.authToken?.access_token) {
+        const expiresAt = stored.authToken.expires_at || (stored.authTokenTimestamp + (3600 * 1000));
+        const fiveMinutesFromNow = Date.now() + (5 * 60 * 1000);
+        
+        if (expiresAt > fiveMinutesFromNow) {
+          return stored.authToken.access_token;
+        } else {
+          console.log('Token expired, getting fresh token...');
+        }
       }
-
-      const now = Date.now();
-      const needsRefresh = now >= (token.expires_at - GoogleAuthService.TOKEN_REFRESH_BUFFER);
       
-      if (needsRefresh) {
-        if (!token.refresh_token) {
-          Logger.warn('Token expired and no refresh token available');
+      // Get fresh token using Chrome Identity API (non-interactive)
+      const result = await chrome.identity.getAuthToken({ 
+        interactive: false,
+        scopes: GOOGLE_SCOPES 
+      });
+      
+      let tokenString: string;
+      if (typeof result === 'string') {
+        tokenString = result;
+      } else if (result && typeof result === 'object' && 'token' in result) {
+        const token = result.token;
+        if (!token) {  // Check if token is undefined/empty
+          console.log('No valid token available - empty token from API');
           return null;
         }
-        
-        Logger.info('Token needs refresh, refreshing automatically');
-        const refreshedToken = await this.refreshToken(token.refresh_token);
-        return refreshedToken.access_token;
+        tokenString = token;  // Now TypeScript knows it's not undefined
+      } else {
+        console.log('No valid token available - invalid result format');
+        return null;
       }
       
-      return token.access_token;
+      if (!tokenString) {
+        console.log('No valid token available - empty token string');
+        return null;
+      }
+      
+      // Update stored token
+      const authToken: GoogleAuthToken = {
+        access_token: tokenString,
+        token_type: 'Bearer',
+        expires_in: 3600,
+        scope: GOOGLE_SCOPES.join(' '),
+        expires_at: Date.now() + (3600 * 1000)
+      };
+      
+      await chrome.storage.local.set({
+        'authToken': authToken,
+        'authTokenTimestamp': Date.now()
+      });
+      
+      return tokenString;
+      
     } catch (error) {
-      Logger.error('Failed to get valid token', error as Error);
+      console.error('Token validation failed:', error);
       return null;
     }
-  }
-
-  /**
-   * Build OAuth authorization URL
-   */
-  private buildAuthUrl(): string {
-    const params = new URLSearchParams({
-      client_id: process.env.GOOGLE_CLIENT_ID || '554258518238-9fs00eer4665qggru39lfmi4o6jrq42n.apps.googleusercontent.com',
-      redirect_uri: chrome.identity.getRedirectURL(),
-      response_type: 'token',
-      scope: GOOGLE_SCOPES.join(' '),
-      access_type: 'offline',
-      prompt: 'consent'
-    });
-
-    return `${GoogleAuthService.OAUTH_URL}?${params.toString()}`;
   }
 
   /**

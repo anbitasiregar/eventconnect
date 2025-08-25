@@ -97,36 +97,69 @@ export class MessageHandler {
   }
 
   /**
-   * Handle authentication-related messages
-   */
+ * Handle authentication-related messages
+ */
   private async handleAuthMessage(message: ExtensionMessage): Promise<any> {
     switch (message.type) {
       case 'AUTH_LOGIN':
-        const token = await this.authService.authenticateUser();
-        return { success: true, token };
+        try {
+          const token = await this.authService.authenticateUser();
+          return { success: true, token };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { success: false, error: errorMessage };
+        }
 
       case 'AUTH_LOGOUT':
-        await this.authService.logout();
-        this.clearCache(); // Clear all cached data on logout
-        return { success: true };
+        try {
+          await this.authService.logout();
+          this.clearCache(); // Clear all cached data on logout
+          return { success: true };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { success: false, error: errorMessage };
+        }
 
       case 'AUTH_STATUS':
-        const isAuthenticated = await this.authService.isAuthenticated();
-        const validToken = isAuthenticated ? await this.authService.getValidToken() : null;
-        return { 
-          authenticated: isAuthenticated,
-          hasValidToken: !!validToken
-        };
+        try {
+          const isAuthenticated = await this.authService.isAuthenticated();
+          const validToken = isAuthenticated ? await this.authService.getValidToken() : null;
+          return { 
+            success: true,
+            authenticated: isAuthenticated,
+            hasValidToken: !!validToken
+          };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { 
+            success: false, 
+            authenticated: false, 
+            hasValidToken: false,
+            error: errorMessage 
+          };
+        }
 
       case 'AUTH_REFRESH':
-        if (!message.payload?.refreshToken) {
-          throw new Error('Refresh token required');
+        // Since Chrome Identity API handles refresh automatically,
+        // we'll just re-authenticate to get a fresh token
+        try {
+          console.log('Token refresh requested - re-authenticating via Chrome Identity API');
+          const token = await this.authService.authenticateUser();
+          return { success: true, token };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error('Token refresh failed:', errorMessage);
+          return { 
+            success: false, 
+            error: 'Failed to refresh token. Please sign in again.' 
+          };
         }
-        const refreshedToken = await this.authService.refreshToken(message.payload.refreshToken);
-        return { success: true, token: refreshedToken };
 
       default:
-        throw new Error(`Unknown auth message type: ${message.type}`);
+        return { 
+          success: false, 
+          error: `Unknown auth message type: ${message.type}` 
+        };
     }
   }
 

@@ -162,6 +162,7 @@ describe('GoogleAuthService', () => {
     });
   });
 
+  /*
   describe('refreshToken', () => {
     it('should refresh token successfully', async () => {
       global.fetch = jest.fn().mockResolvedValue({
@@ -217,7 +218,8 @@ describe('GoogleAuthService', () => {
         .rejects.toThrow('Failed to refresh authentication');
     });
   });
-
+  */
+ 
   describe('logout', () => {
     it('should clear stored token', async () => {
       mockStorageData({ authToken: { access_token: 'token' } });
