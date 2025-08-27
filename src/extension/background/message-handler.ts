@@ -262,7 +262,47 @@ export class MessageHandler {
         await this.sheetsService.appendToEventLog(message.payload.sheetId, message.payload.entry);
         return { success: true };
   
-      // ADD THESE NEW CASES:
+      case 'VALIDATE_SHEET':
+        try {
+          const { sheetId } = message.payload;
+          if (!sheetId) {
+            throw new Error('Sheet ID required');
+          }
+          
+          console.log('Validating sheet with README structure:', sheetId);
+          
+          const result = await this.sheetsService.validateSheetStructure(sheetId);
+          
+          if (result.isValid) {
+            // Store sheet structure for future use
+            await chrome.storage.local.set({
+              [`sheetStructure_${sheetId}`]: result.structure,
+              [`sheetStructure_timestamp_${sheetId}`]: Date.now()
+            });
+
+            return { 
+              success: true, 
+              message: 'Sheet structure read successfully from README tab',
+              eventName: result.structure?.sheetTitle || 'Event Dashboard',
+              structure: {
+                totalTabs: result.structure?.totalTabs || 0,
+                tabs: Object.keys(result.structure?.tabs || {})
+              }
+            };
+          } else {
+            return { 
+              success: false, 
+              error: result.error || 'Failed to read sheet structure' 
+            };
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error('Sheet validation failed:', errorMessage);
+          return { 
+            success: false, 
+            error: `Sheet validation failed: ${errorMessage}` 
+          };
+        }
   
       default:
         throw new Error(`Unknown sheets message type: ${message.type}`);

@@ -5,6 +5,22 @@
 
 import { Logger } from '../shared/logger';
 
+interface SheetColumn {
+  name: string;
+  description: string;
+}
+
+interface SheetTab {
+  headerRow: number;
+  columns: SheetColumn[];
+}
+
+interface SheetStructure {
+  tabs: Record<string, SheetTab>;
+  sheetTitle?: string;
+  totalTabs?: number;
+}
+
 interface EventData {
   eventName: string;
   eventDate: string;
@@ -60,21 +76,31 @@ export class GoogleSheetsService {
       Logger.info(`Reading event data from sheet: ${sheetId}`);
 
       // Validate sheet structure first
-      const isValid = await this.validateSheetStructure(sheetId);
-      if (!isValid) {
-        throw new Error('Sheet does not have the expected EventConnect structure');
+      const validation = await this.validateSheetStructure(sheetId);
+      if (!validation.isValid) {
+        throw new Error(validation.error || 'Sheet does not have the expected EventConnect structure');
       }
 
-      // Read different sections of the sheet
-      const [overview, budget, tasks, vendors, timeline] = await Promise.all([
-        this.readRange(sheetId, 'Event Overview!A:D'),
-        this.readRange(sheetId, 'Budget!A:H'),
-        this.readRange(sheetId, 'Timeline!A:G'),
-        this.readRange(sheetId, 'Vendors!A:H'),
-        this.readRange(sheetId, 'Timeline!A:G')
-      ]);
+      // Get stored sheet structure to read data dynamically
+      const structure = await this.getSheetStructure(sheetId);
+      if (!structure) {
+        throw new Error('Sheet structure not found. Please reconnect the sheet.');
+      }
 
-      const eventData = this.parseEventData(overview, budget, tasks, vendors, timeline);
+      // Read data from available tabs based on structure
+      const sheetData: Record<string, any[][]> = {};
+      
+      for (const [tabName, tabInfo] of Object.entries(structure.tabs)) {
+        try {
+          const range = `${tabName}!A:Z`; // Read all columns
+          sheetData[tabName] = await this.readRange(sheetId, range);
+        } catch (error) {
+          console.warn(`Could not read tab ${tabName}:`, error);
+          sheetData[tabName] = [];
+        }
+      }
+
+      const eventData = this.parseFlexibleEventData(sheetData, structure);
       
       Logger.info('Successfully read event data from sheet');
       return eventData;
@@ -157,43 +183,150 @@ export class GoogleSheetsService {
   }
 
   /**
-   * Validate that sheet has expected EventConnect structure
+   * Validate sheet structure by reading README tab
    */
-  async validateSheetStructure(sheetId: string): Promise<boolean> {
+  async validateSheetStructure(sheetId: string): Promise<{ isValid: boolean; structure?: SheetStructure; error?: string }> {
     try {
-      Logger.debug(`Validating sheet structure: ${sheetId}`);
-
-      // Check for required worksheets
-      const metadata = await this.getSheetMetadata(sheetId);
-      const sheetNames = metadata.sheets?.map((sheet: any) => sheet.properties.title) || [];
-
-      const requiredSheets = ['Event Overview', 'Budget', 'Timeline', 'Vendors', 'Guest List'];
-      const hasRequiredSheets = requiredSheets.every(name => sheetNames.includes(name));
-
-      if (!hasRequiredSheets) {
-        Logger.warn('Sheet missing required worksheets', { 
-          found: sheetNames, 
-          required: requiredSheets 
-        });
-        return false;
+      console.log('Reading sheet structure from README tab:', sheetId);
+      
+      const token = await this.getAuthToken();
+      if (!token) {
+        throw new Error('No authentication token available');
       }
 
-      // Validate Event Overview structure
-      const overviewData = await this.readRange(sheetId, 'Event Overview!A1:B7');
-      const hasOverviewStructure = overviewData.length >= 6 && 
-                                  overviewData[0][0] === 'Event Name';
+      // First, check if sheet is accessible
+      const sheetInfoResponse = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=properties.title,sheets.properties.title`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
 
-      if (!hasOverviewStructure) {
-        Logger.warn('Event Overview worksheet has incorrect structure');
-        return false;
+      if (!sheetInfoResponse.ok) {
+        if (sheetInfoResponse.status === 403) {
+          return { 
+            isValid: false, 
+            error: 'Permission denied. Please ensure the sheet is shared with your Google account.' 
+          };
+        } else if (sheetInfoResponse.status === 404) {
+          return { 
+            isValid: false, 
+            error: 'Sheet not found. Please check the Sheet ID.' 
+          };
+        } else {
+          return { 
+            isValid: false, 
+            error: `Sheet access failed: ${sheetInfoResponse.statusText}` 
+          };
+        }
       }
 
-      Logger.debug('Sheet structure validation passed');
-      return true;
+      const sheetInfo = await sheetInfoResponse.json();
+      console.log('Sheet accessible:', sheetInfo.properties.title);
+
+      // Check if README tab exists
+      const readmeTab = sheetInfo.sheets?.find((sheet: any) => 
+        sheet.properties.title.toLowerCase() === 'readme'
+      );
+
+      if (!readmeTab) {
+        return {
+          isValid: false,
+          error: 'README tab not found. Please create a README tab in your Google Sheets with the structure definition table (Tab, Header Row, Column, Column Description).'
+        };
+      }
+
+      console.log('README tab found, reading structure...');
+
+      // Read README tab content
+      const readmeResponse = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/README!A:Z`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (!readmeResponse.ok) {
+        return {
+          isValid: false,
+          error: 'Failed to read README tab content.'
+        };
+      }
+
+      const readmeData = await readmeResponse.json();
+      
+      if (!readmeData.values || readmeData.values.length === 0) {
+        return {
+          isValid: false,
+          error: 'README tab is empty. Please add the structure definition table.'
+        };
+      }
+
+      // Parse README structure
+      const structure = this.parseReadmeStructure(readmeData.values);
+      
+      if (!structure || Object.keys(structure.tabs).length === 0) {
+        return {
+          isValid: false,
+          error: 'Could not parse sheet structure from README tab. Please ensure the table has columns: Tab, Header Row, Column, Column Description.'
+        };
+      }
+
+      console.log('Sheet structure parsed successfully:', Object.keys(structure.tabs).length, 'tabs found');
+
+      return {
+        isValid: true,
+        structure: {
+          ...structure,
+          sheetTitle: sheetInfo.properties.title,
+          totalTabs: Object.keys(structure.tabs).length
+        }
+      };
 
     } catch (error) {
-      Logger.error('Sheet structure validation failed', error as Error);
-      return false;
+      console.error('Sheet structure validation error:', error);
+      
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // Handle specific error types
+      if (errorMessage?.includes('fetch')) {
+        return { 
+          isValid: false, 
+          error: 'Network error. Please check your internet connection and try again.' 
+        };
+      }
+      
+      if (errorMessage?.includes('quota') || errorMessage?.includes('rate limit')) {
+        return { 
+          isValid: false, 
+          error: 'Google Sheets API quota exceeded. Please try again in a few minutes.' 
+        };
+      }
+      
+      if (errorMessage?.includes('authentication') || errorMessage?.includes('token')) {
+        return { 
+          isValid: false, 
+          error: 'Authentication expired. Please sign in again.' 
+        };
+      }
+      
+      if (errorMessage?.includes('parse')) {
+        return { 
+          isValid: false, 
+          error: 'README tab structure is invalid. Please ensure it has columns: Tab, Header Row, Column, Column Description.' 
+        };
+      }
+      
+      return {
+        isValid: false,
+        error: `Failed to read sheet structure: ${errorMessage}`
+      };
     }
   }
 
@@ -355,56 +488,103 @@ export class GoogleSheetsService {
   }
 
   /**
-   * Parse raw sheet data into EventData structure
+   * Parse sheet data flexibly based on README structure
    */
-  private parseEventData(
-    overview: any[][],
-    budget: any[][],
-    tasks: any[][],
-    vendors: any[][],
-    timeline: any[][]
+  private parseFlexibleEventData(
+    sheetData: Record<string, any[][]>,
+    structure: SheetStructure
   ): EventData {
-    // Parse overview data
-    const eventName = overview[0]?.[1] || 'Untitled Event';
-    const eventDate = overview[1]?.[1] || '';
+    // Default values
+    let eventName = structure.sheetTitle || 'Untitled Event';
+    let eventDate = '';
+    let budgetTotal = 0;
+    let budgetSpent = 0;
+    let tasks: TaskItem[] = [];
+    let vendors: VendorContact[] = [];
+    let timelineItems: TimelineItem[] = [];
 
-    // Parse budget data
-    const budgetTotal = this.parseNumber(overview.find(row => row[0] === 'Total Budget')?.[1]) || 0;
-    const budgetSpent = budget.slice(1).reduce((sum, row) => sum + this.parseNumber(row[3]), 0);
-    const budgetRemaining = budgetTotal - budgetSpent;
+    // Try to extract data from available tabs
+    for (const [tabName, tabInfo] of Object.entries(structure.tabs)) {
+      const tabData = sheetData[tabName];
+      if (!tabData || tabData.length === 0) continue;
 
-    // Parse tasks data
-    const taskRows = tasks.slice(1).filter(row => row[0]);
-    const completedTasks = taskRows.filter(row => row[3] === 'Completed').length;
-    const upcomingTasks = taskRows
-      .filter(row => row[3] !== 'Completed')
-      .slice(0, 5)
-      .map(row => ({
-        name: row[0] || '',
-        dueDate: row[1] || '',
-        assignedTo: row[2] || '',
-        priority: (row[4] || 'medium') as 'high' | 'medium' | 'low'
-      }));
+      const dataRows = tabData.slice(tabInfo.headerRow); // Skip to data rows
 
-    // Parse vendor data
-    const vendorRows = vendors.slice(1).filter(row => row[0]);
-    const vendorContacts = vendorRows.map(row => ({
-      name: row[0] || '',
-      category: row[1] || '',
-      contact: row[2] || '',
-      email: row[3] || '',
-      phone: row[4] || '',
-      status: row[5] || 'pending'
-    }));
+      // Look for common patterns in tab names and columns
+      const lowerTabName = tabName.toLowerCase();
+      
+      // Extract event overview data
+      if (lowerTabName.includes('overview') || lowerTabName.includes('info')) {
+        for (const row of tabData) {
+          if (row[0] && row[1]) {
+            const key = String(row[0]).toLowerCase();
+            if (key.includes('event') && key.includes('name')) {
+              eventName = String(row[1]) || eventName;
+            } else if (key.includes('date')) {
+              eventDate = String(row[1]) || eventDate;
+            } else if (key.includes('budget') && key.includes('total')) {
+              budgetTotal = this.parseNumber(row[1]);
+            }
+          }
+        }
+      }
 
-    // Parse timeline data
-    const timelineRows = timeline.slice(1).filter(row => row[0]);
-    const timelineItems = timelineRows.map(row => ({
-      task: row[0] || '',
-      dueDate: row[1] || '',
-      status: (row[3] || 'pending') as 'pending' | 'in_progress' | 'completed',
-      assignedTo: row[2] || ''
-    }));
+      // Extract budget data
+      if (lowerTabName.includes('budget') || lowerTabName.includes('expense')) {
+        for (const row of dataRows) {
+          if (row[0]) {
+            // Look for amount columns
+            for (let i = 1; i < row.length; i++) {
+              const amount = this.parseNumber(row[i]);
+              if (amount > 0) {
+                budgetSpent += amount;
+                break; // Only count first amount per row
+              }
+            }
+          }
+        }
+      }
+
+      // Extract tasks data
+      if (lowerTabName.includes('task') || lowerTabName.includes('todo') || lowerTabName.includes('timeline')) {
+        for (const row of dataRows) {
+          if (row[0]) {
+            tasks.push({
+              name: String(row[0]) || '',
+              dueDate: String(row[1] || ''),
+              assignedTo: String(row[2] || ''),
+              priority: this.parsePriority(String(row[3] || ''))
+            });
+          }
+        }
+      }
+
+      // Extract vendor data
+      if (lowerTabName.includes('vendor') || lowerTabName.includes('supplier') || lowerTabName.includes('contact')) {
+        for (const row of dataRows) {
+          if (row[0]) {
+            vendors.push({
+              name: String(row[0]) || '',
+              category: String(row[1] || ''),
+              contact: String(row[2] || ''),
+              email: String(row[3] || ''),
+              phone: String(row[4] || ''),
+              status: String(row[5] || 'pending')
+            });
+          }
+        }
+      }
+    }
+
+    // Calculate completed tasks
+    const completedTasks = tasks.filter(task => 
+      task.name.toLowerCase().includes('complete') ||
+      task.assignedTo.toLowerCase().includes('complete')
+    ).length;
+
+    const upcomingTasks = tasks
+      .filter(task => !task.name.toLowerCase().includes('complete'))
+      .slice(0, 5);
 
     return {
       eventName,
@@ -412,16 +592,26 @@ export class GoogleSheetsService {
       budget: {
         total: budgetTotal,
         spent: budgetSpent,
-        remaining: budgetRemaining
+        remaining: budgetTotal - budgetSpent
       },
       tasks: {
         completed: completedTasks,
-        total: taskRows.length,
+        total: tasks.length,
         upcoming: upcomingTasks
       },
-      vendors: vendorContacts,
+      vendors,
       timeline: timelineItems
     };
+  }
+
+  /**
+   * Parse priority from string
+   */
+  private parsePriority(value: string): 'high' | 'medium' | 'low' {
+    const lower = value.toLowerCase();
+    if (lower.includes('high') || lower.includes('urgent')) return 'high';
+    if (lower.includes('low')) return 'low';
+    return 'medium';
   }
 
   /**
@@ -477,6 +667,112 @@ export class GoogleSheetsService {
   private parseNumber(value: any): number {
     const parsed = parseFloat(String(value).replace(/[^0-9.-]/g, ''));
     return isNaN(parsed) ? 0 : parsed;
+  }
+
+  /**
+   * Parse README tab content to extract sheet structure
+   */
+  private parseReadmeStructure(readmeValues: string[][]): SheetStructure | null {
+    try {
+      // Find header row (should contain: Tab, Header Row, Column, Column Description)
+      let headerRowIndex = -1;
+      const expectedHeaders = ['tab', 'header row', 'column', 'column description'];
+      
+      for (let i = 0; i < readmeValues.length; i++) {
+        const row = readmeValues[i];
+        if (row && row.length >= 4) {
+          const normalizedRow = row.slice(0, 4).map(cell => 
+            (cell || '').toLowerCase().trim()
+          );
+          
+          if (expectedHeaders.every(header => 
+            normalizedRow.some(cell => cell.includes(header.split(' ')[0]))
+          )) {
+            headerRowIndex = i;
+            break;
+          }
+        }
+      }
+
+      if (headerRowIndex === -1) {
+        console.error('Could not find header row with expected columns');
+        return null;
+      }
+
+      console.log('Found header row at index:', headerRowIndex);
+
+      // Parse data rows
+      const structure: SheetStructure = { tabs: {} };
+      
+      for (let i = headerRowIndex + 1; i < readmeValues.length; i++) {
+        const row = readmeValues[i];
+        if (!row || row.length < 4) continue;
+
+        const [tabName, headerRow, columnName, columnDescription] = row;
+        
+        if (!tabName || !columnName) continue;
+        if (tabName.toLowerCase().includes('ignore')) continue;
+
+        const cleanTabName = tabName.trim();
+        const cleanColumnName = columnName.trim();
+        const cleanDescription = (columnDescription || '').trim();
+        const headerRowNum = parseInt(headerRow) || 1;
+
+        // Initialize tab if it doesn't exist
+        if (!structure.tabs[cleanTabName]) {
+          structure.tabs[cleanTabName] = {
+            headerRow: headerRowNum,
+            columns: []
+          };
+        }
+
+        // Add column to tab
+        if (cleanColumnName && !cleanColumnName.toLowerCase().includes('ignore')) {
+          structure.tabs[cleanTabName].columns.push({
+            name: cleanColumnName,
+            description: cleanDescription
+          });
+        }
+      }
+
+      return structure;
+
+    } catch (error) {
+      console.error('Error parsing README structure:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get stored sheet structure for a specific sheet
+   */
+  async getSheetStructure(sheetId: string): Promise<SheetStructure | null> {
+    try {
+      const stored = await chrome.storage.local.get([
+        `sheetStructure_${sheetId}`,
+        `sheetStructure_timestamp_${sheetId}`
+      ]);
+
+      if (!stored[`sheetStructure_${sheetId}`]) {
+        console.log('No stored structure found for sheet:', sheetId);
+        return null;
+      }
+
+      // Check if structure is fresh (less than 24 hours old)
+      const timestamp = stored[`sheetStructure_timestamp_${sheetId}`];
+      const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+      
+      if (timestamp < twentyFourHoursAgo) {
+        console.log('Stored structure is stale, re-reading...');
+        // Could trigger a background refresh here if needed
+        return null;
+      }
+
+      return stored[`sheetStructure_${sheetId}`];
+    } catch (error) {
+      console.error('Error retrieving sheet structure:', error);
+      return null;
+    }
   }
 
   /**

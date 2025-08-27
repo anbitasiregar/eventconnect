@@ -36,23 +36,30 @@ export const EventSetup: React.FC<EventSetupProps> = ({ onEventConnected, onCanc
     try {
       console.log('Attempting to connect to sheet:', cleanSheetId);
       
-      // Test if we can access the sheet
       const response = await chrome.runtime.sendMessage({
         type: 'VALIDATE_SHEET',
         payload: { sheetId: cleanSheetId }
       });
 
       if (response.success) {
-        // Save as current event
         await chrome.runtime.sendMessage({
           type: 'SET_CURRENT_EVENT',
           payload: { eventId: cleanSheetId }
         });
         
         console.log('Event dashboard connected successfully');
-        onEventConnected(cleanSheetId, "Event Name");
+        console.log('Sheet structure:', response.structure);
+        
+        onEventConnected(cleanSheetId, response.eventName || 'Event Dashboard');
       } else {
-        setError(response.error || 'Could not connect to sheet. Please check the Sheet ID and sharing permissions.');
+        // Handle specific README error with helpful message
+        if (response.error?.includes('README tab not found')) {
+          setError(
+            'README tab not found in your Google Sheets. Please create a README tab with a table containing columns: Tab, Header Row, Column, Column Description. This helps EventConnect understand your sheet structure.'
+          );
+        } else {
+          setError(response.error || 'Could not connect to sheet. Please check the Sheet ID and sharing permissions.');
+        }
       }
     } catch (error) {
       console.error('Sheet connection failed:', error);
