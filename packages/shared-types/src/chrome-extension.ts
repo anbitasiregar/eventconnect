@@ -17,6 +17,7 @@ export enum MessageType {
   GET_CURRENT_EVENT = 'get_current_event',
   SET_CURRENT_EVENT = 'set_current_event',
   VALIDATE_SHEET = 'validate_sheet',
+  GET_SHEET_INFO = 'get_sheet_info',
   
   // Sheet operations
   READ_EVENT_DATA = 'read_event_data',

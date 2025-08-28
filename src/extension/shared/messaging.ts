@@ -21,6 +21,7 @@ export type MessageType =
   | 'UPDATE_EVENT_DATA'
   | 'APPEND_LOG'
   | 'SHEETS_'
+  | 'GET_SHEET_INFO'
   // Actions
   | 'EXECUTE_ACTION'
   | 'GET_ACTION_SUGGESTIONS'

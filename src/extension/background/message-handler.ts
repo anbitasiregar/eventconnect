@@ -303,6 +303,36 @@ export class MessageHandler {
             error: `Sheet validation failed: ${errorMessage}` 
           };
         }
+
+      case 'GET_SHEET_INFO':
+        try {
+          const { sheetId } = message.payload;
+          if (!sheetId) {
+            throw new Error('Sheet ID required');
+          }
+      
+          // Get basic sheet info to check if still accessible
+          const sheetInfo = await this.sheetsService.getSheetInfo(sheetId);
+          
+          if (sheetInfo) {
+            return { 
+              success: true, 
+              eventName: sheetInfo.name,
+              sheetId 
+            };
+          } else {
+            return { 
+              success: false, 
+              error: 'Sheet no longer accessible' 
+            };
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { 
+            success: false, 
+            error: errorMessage 
+          };
+        }
   
       default:
         throw new Error(`Unknown sheets message type: ${message.type}`);
@@ -355,7 +385,7 @@ export class MessageHandler {
    * Check if message type is event-related
    */
   private isEventMessage(type: string): boolean {
-    return ['GET_CURRENT_EVENT', 'SET_CURRENT_EVENT', 'VALIDATE_SHEET'].includes(type);
+    return ['GET_CURRENT_EVENT', 'SET_CURRENT_EVENT', 'VALIDATE_SHEET', 'GET_SHEET_INFO'].includes(type);
   }
 
   /**
@@ -381,7 +411,8 @@ export class MessageHandler {
       'GET_CURRENT_EVENT',
       'READ_EVENT_DATA',
       'GET_ACTION_SUGGESTIONS',
-      'VALIDATE_SHEET'
+      'VALIDATE_SHEET',
+      'GET_SHEET_INFO'
     ].includes(type);
   }
 

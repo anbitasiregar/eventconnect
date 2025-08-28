@@ -195,6 +195,8 @@ export class GoogleAuthService {
         'authToken': authToken,
         'authTokenTimestamp': Date.now()
       });
+
+      console.log('Token validation successful');
       
       return tokenString;
       
