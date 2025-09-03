@@ -190,14 +190,19 @@ export class MessageHandler {
         } catch (error) {
           // Fallback to local storage
           const storedEventId = await chrome.storage.local.get(['currentEventId']);
+          const storedEventDate = await chrome.storage.local.get(['currentEventTimestamp']);
           if (storedEventId.currentEventId) {
             // Create a minimal event object from stored sheet ID
             const localEvent = {
               id: storedEventId.currentEventId,
               name: 'Local Event Dashboard', // Could be enhanced later
-              type: 'google_sheet',
-              isLocal: true
+              sheetsId: storedEventId.currentEventId,
+              date: storedEventDate.currentEventTimestamp 
+              ? new Date(storedEventDate.currentEventTimestamp).toLocaleDateString()
+              : new Date().toLocaleDateString(),
+              status: 'in_progress' as const  // Could be enhanced later
             };
+
             return { event: localEvent };
           }
           return { event: null };

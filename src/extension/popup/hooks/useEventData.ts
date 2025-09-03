@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { sendMessageToBackground } from '../../shared/messaging';
 
+// Simplified Event interface for extension use
 interface Event {
   id: string;
   name: string;
   date: string;
   sheetsId: string;
-  status: 'planning' | 'in_progress' | 'completed';
+  status: 'planning' | 'in_progress' | 'completed' | 'cancelled';
 }
 
 interface TaskItem {

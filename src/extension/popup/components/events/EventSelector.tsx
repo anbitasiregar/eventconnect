@@ -45,7 +45,7 @@ export const EventSelector: React.FC = () => {
                       'bg-gray-100 text-gray-800'
                     }`}>
                       {currentEvent.status === 'in_progress' ? 'In Progress' : 
-                       currentEvent.status.charAt(0).toUpperCase() + currentEvent.status.slice(1)}
+                       currentEvent.status ? currentEvent.status.charAt(0).toUpperCase() + currentEvent.status.slice(1) : 'Unknown'}
                     </span>
                   </div>
                 </div>

@@ -49,3 +49,6 @@ coverage/
 
 # Prompts
 .docs/prompts
+
+# Console logs
+.docs/consolelogs

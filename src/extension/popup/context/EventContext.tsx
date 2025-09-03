@@ -1,12 +1,13 @@
 import React, { createContext, useContext } from 'react';
 import { useEventData } from '../hooks/useEventData';
 
+// Simplified Event interface for extension use
 interface Event {
   id: string;
   name: string;
   date: string;
   sheetsId: string;
-  status: 'planning' | 'in_progress' | 'completed';
+  status: 'planning' | 'in_progress' | 'completed' | 'cancelled';
 }
 
 interface TaskItem {
