@@ -155,6 +155,20 @@ export class MessageHandler {
           };
         }
 
+      case 'GET_USER_INFO':
+        try {
+          const userInfo = await this.apiClient.auth.getUserInfo();
+          return { success: true, userInfo };
+        } catch (error) {
+          // Fallback for when API is unavailable
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { 
+            success: false, 
+            userInfo: null, 
+            error: `API unavailable: ${errorMessage}` 
+          };
+        }
+
       default:
         return { 
           success: false, 
@@ -169,11 +183,32 @@ export class MessageHandler {
   private async handleEventMessage(message: ExtensionMessage): Promise<any> {
     switch (message.type) {
       case 'GET_CURRENT_EVENT':
-        const currentEvent = await this.apiClient.events.getCurrentEvent();
-        return { event: currentEvent };
+        try {
+          // First try API
+          const currentEvent = await this.apiClient.events.getCurrentEvent();
+          return { event: currentEvent };
+        } catch (error) {
+          // Fallback to local storage
+          const storedEventId = await chrome.storage.local.get(['currentEventId']);
+          const storedEventDate = await chrome.storage.local.get(['currentEventTimestamp']);
+          if (storedEventId.currentEventId) {
+            // Create a minimal event object from stored sheet ID
+            const localEvent = {
+              id: storedEventId.currentEventId,
+              name: 'Local Event Dashboard', // Could be enhanced later
+              sheetsId: storedEventId.currentEventId,
+              date: storedEventDate.currentEventTimestamp 
+              ? new Date(storedEventDate.currentEventTimestamp).toLocaleDateString()
+              : new Date().toLocaleDateString(),
+              status: 'in_progress' as const  // Could be enhanced later
+            };
+
+            return { event: localEvent };
+          }
+          return { event: null };
+        }
 
       case 'SET_CURRENT_EVENT':
-        case 'SET_CURRENT_EVENT':
         try {
           const { eventId } = message.payload;
           if (!eventId) {
@@ -195,40 +230,40 @@ export class MessageHandler {
           return { success: false, error: errorMessage };
         }
 
-        case 'VALIDATE_SHEET':
-          try {
-            const { sheetId } = message.payload;
-            if (!sheetId) {
-              throw new Error('Sheet ID required');
-            }
-            
-            console.log('Validating sheet access:', sheetId);
-            
-            // Use the sheets service to validate access
-            const isValid = await this.sheetsService.validateSheetStructure(sheetId);
-            
-            if (isValid) {
-              // Try to get sheet name for better UX
-              const sheetInfo = await this.sheetsService.getSheetName(sheetId);
-              return { 
-                success: true, 
-                message: 'Sheet validated successfully',
-                eventName: sheetInfo?.name || 'Event Dashboard'
-              };
-            } else {
-              return { 
-                success: false, 
-                error: 'Cannot access sheet. Please check sharing permissions and Sheet ID.' 
-              };
-            }
-          } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            console.error('Sheet validation failed:', errorMessage);
+      case 'VALIDATE_SHEET':
+        try {
+          const { sheetId } = message.payload;
+          if (!sheetId) {
+            throw new Error('Sheet ID required');
+          }
+          
+          console.log('Validating sheet access:', sheetId);
+          
+          // Use the sheets service to validate access
+          const isValid = await this.sheetsService.validateSheetStructure(sheetId);
+          
+          if (isValid) {
+            // Try to get sheet name for better UX
+            const sheetInfo = await this.sheetsService.getSheetName(sheetId);
+            return { 
+              success: true, 
+              message: 'Sheet validated successfully',
+              eventName: sheetInfo?.name || 'Event Dashboard'
+            };
+          } else {
             return { 
               success: false, 
-              error: `Sheet validation failed: ${errorMessage}` 
+              error: 'Cannot access sheet. Please check sharing permissions and Sheet ID.' 
             };
           }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error('Sheet validation failed:', errorMessage);
+          return { 
+            success: false, 
+            error: `Sheet validation failed: ${errorMessage}` 
+          };
+        }
 
       default:
         throw new Error(`Unknown event message type: ${message.type}`);
@@ -262,7 +297,47 @@ export class MessageHandler {
         await this.sheetsService.appendToEventLog(message.payload.sheetId, message.payload.entry);
         return { success: true };
   
-      // ADD THESE NEW CASES:
+      case 'VALIDATE_SHEET':
+        try {
+          const { sheetId } = message.payload;
+          if (!sheetId) {
+            throw new Error('Sheet ID required');
+          }
+          
+          console.log('Validating sheet with README structure:', sheetId);
+          
+          const result = await this.sheetsService.validateSheetStructure(sheetId);
+          
+          if (result.isValid) {
+            // Store sheet structure for future use
+            await chrome.storage.local.set({
+              [`sheetStructure_${sheetId}`]: result.structure,
+              [`sheetStructure_timestamp_${sheetId}`]: Date.now()
+            });
+
+            return { 
+              success: true, 
+              message: 'Sheet structure read successfully from README tab',
+              eventName: result.structure?.sheetTitle || 'Event Dashboard',
+              structure: {
+                totalTabs: result.structure?.totalTabs || 0,
+                tabs: Object.keys(result.structure?.tabs || {})
+              }
+            };
+          } else {
+            return { 
+              success: false, 
+              error: result.error || 'Failed to read sheet structure' 
+            };
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error('Sheet validation failed:', errorMessage);
+          return { 
+            success: false, 
+            error: `Sheet validation failed: ${errorMessage}` 
+          };
+        }
   
       default:
         throw new Error(`Unknown sheets message type: ${message.type}`);
@@ -308,7 +383,7 @@ export class MessageHandler {
    * Check if message type is authentication-related
    */
   private isAuthMessage(type: string): boolean {
-    return ['AUTH_LOGIN', 'AUTH_LOGOUT', 'AUTH_STATUS', 'AUTH_REFRESH'].includes(type);
+    return ['AUTH_LOGIN', 'AUTH_LOGOUT', 'AUTH_STATUS', 'AUTH_REFRESH', 'GET_USER_INFO'].includes(type);
   }
 
   /**

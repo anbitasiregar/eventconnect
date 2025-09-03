@@ -71,6 +71,8 @@ chrome.runtime.onStartup.addListener(async () => {
 
 // Message routing with enhanced handler
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  Logger.info('Message received', { message, sender });
+  
   handleAsyncMessage(message, sender)
     .then(sendResponse)
     .catch(error => {
@@ -219,13 +221,24 @@ async function refreshCurrentEventContext(): Promise<void> {
   try {
     Logger.info('Refreshing current event context');
     
-    const currentEvent = await apiClient.events.getCurrentEvent();
+    // Try API first
+    try {
+      const currentEvent = await apiClient.events.getCurrentEvent();
+      if (currentEvent) {
+        await setStorageItem('currentEventId', currentEvent.id);
+        Logger.info('Current event context updated from API', { eventId: currentEvent.id });
+        return;
+      }
+    } catch (apiError) {
+      Logger.warn('API unavailable, checking local storage', apiError as Error);
+    }
     
-    if (currentEvent) {
-      await setStorageItem('currentEventId', currentEvent.id);
-      Logger.info('Current event context updated', { eventId: currentEvent.id });
+    // Fallback to local storage
+    const storedEventId = await getStorageItem('currentEventId');
+    if (storedEventId) {
+      Logger.info('Found locally stored event', { eventId: storedEventId });
     } else {
-      Logger.info('No current event found');
+      Logger.info('No current event found in API or local storage');
     }
   } catch (error) {
     Logger.error('Failed to refresh event context', error as Error);
