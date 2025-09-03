@@ -173,7 +173,6 @@ export class MessageHandler {
         return { event: currentEvent };
 
       case 'SET_CURRENT_EVENT':
-        case 'SET_CURRENT_EVENT':
         try {
           const { eventId } = message.payload;
           if (!eventId) {
@@ -195,40 +194,40 @@ export class MessageHandler {
           return { success: false, error: errorMessage };
         }
 
-        case 'VALIDATE_SHEET':
-          try {
-            const { sheetId } = message.payload;
-            if (!sheetId) {
-              throw new Error('Sheet ID required');
-            }
-            
-            console.log('Validating sheet access:', sheetId);
-            
-            // Use the sheets service to validate access
-            const isValid = await this.sheetsService.validateSheetStructure(sheetId);
-            
-            if (isValid) {
-              // Try to get sheet name for better UX
-              const sheetInfo = await this.sheetsService.getSheetName(sheetId);
-              return { 
-                success: true, 
-                message: 'Sheet validated successfully',
-                eventName: sheetInfo?.name || 'Event Dashboard'
-              };
-            } else {
-              return { 
-                success: false, 
-                error: 'Cannot access sheet. Please check sharing permissions and Sheet ID.' 
-              };
-            }
-          } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            console.error('Sheet validation failed:', errorMessage);
+      case 'VALIDATE_SHEET':
+        try {
+          const { sheetId } = message.payload;
+          if (!sheetId) {
+            throw new Error('Sheet ID required');
+          }
+          
+          console.log('Validating sheet access:', sheetId);
+          
+          // Use the sheets service to validate access
+          const isValid = await this.sheetsService.validateSheetStructure(sheetId);
+          
+          if (isValid) {
+            // Try to get sheet name for better UX
+            const sheetInfo = await this.sheetsService.getSheetName(sheetId);
+            return { 
+              success: true, 
+              message: 'Sheet validated successfully',
+              eventName: sheetInfo?.name || 'Event Dashboard'
+            };
+          } else {
             return { 
               success: false, 
-              error: `Sheet validation failed: ${errorMessage}` 
+              error: 'Cannot access sheet. Please check sharing permissions and Sheet ID.' 
             };
           }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error('Sheet validation failed:', errorMessage);
+          return { 
+            success: false, 
+            error: `Sheet validation failed: ${errorMessage}` 
+          };
+        }
 
       default:
         throw new Error(`Unknown event message type: ${message.type}`);

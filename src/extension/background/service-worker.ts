@@ -71,6 +71,8 @@ chrome.runtime.onStartup.addListener(async () => {
 
 // Message routing with enhanced handler
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  Logger.info('Message received', { message, sender });
+  
   handleAsyncMessage(message, sender)
     .then(sendResponse)
     .catch(error => {
