@@ -155,6 +155,20 @@ export class MessageHandler {
           };
         }
 
+      case 'GET_USER_INFO':
+        try {
+          const userInfo = await this.apiClient.auth.getUserInfo();
+          return { success: true, userInfo };
+        } catch (error) {
+          // Fallback for when API is unavailable
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { 
+            success: false, 
+            userInfo: null, 
+            error: `API unavailable: ${errorMessage}` 
+          };
+        }
+
       default:
         return { 
           success: false, 
@@ -169,8 +183,25 @@ export class MessageHandler {
   private async handleEventMessage(message: ExtensionMessage): Promise<any> {
     switch (message.type) {
       case 'GET_CURRENT_EVENT':
-        const currentEvent = await this.apiClient.events.getCurrentEvent();
-        return { event: currentEvent };
+        try {
+          // First try API
+          const currentEvent = await this.apiClient.events.getCurrentEvent();
+          return { event: currentEvent };
+        } catch (error) {
+          // Fallback to local storage
+          const storedEventId = await chrome.storage.local.get(['currentEventId']);
+          if (storedEventId.currentEventId) {
+            // Create a minimal event object from stored sheet ID
+            const localEvent = {
+              id: storedEventId.currentEventId,
+              name: 'Local Event Dashboard', // Could be enhanced later
+              type: 'google_sheet',
+              isLocal: true
+            };
+            return { event: localEvent };
+          }
+          return { event: null };
+        }
 
       case 'SET_CURRENT_EVENT':
         try {
@@ -347,7 +378,7 @@ export class MessageHandler {
    * Check if message type is authentication-related
    */
   private isAuthMessage(type: string): boolean {
-    return ['AUTH_LOGIN', 'AUTH_LOGOUT', 'AUTH_STATUS', 'AUTH_REFRESH'].includes(type);
+    return ['AUTH_LOGIN', 'AUTH_LOGOUT', 'AUTH_STATUS', 'AUTH_REFRESH', 'GET_USER_INFO'].includes(type);
   }
 
   /**

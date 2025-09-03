@@ -12,6 +12,7 @@ export enum MessageType {
   AUTH_LOGOUT = 'auth_logout',
   AUTH_STATUS = 'auth_status',
   AUTH_REFRESH = 'auth_refresh',
+  GET_USER_INFO = 'get_user_info',
   
   // Event management
   GET_CURRENT_EVENT = 'get_current_event',
