@@ -204,7 +204,7 @@ export class WhatsAppSheetsAPI {
     try {
       // Check if guest sheet exists
       const sheetInfo = await this.getSheetInfo(sheetId);
-      const hasGuestSheet = sheetInfo.sheets.some(sheet => 
+      const hasGuestSheet = sheetInfo.sheets.some((sheet: any) =>
         sheet.properties.title === this.config.guestSheetName
       );
 

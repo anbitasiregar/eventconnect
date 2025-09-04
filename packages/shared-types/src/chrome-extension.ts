@@ -39,7 +39,13 @@ export enum MessageType {
   // Storage
   STORAGE_GET = 'storage_get',
   STORAGE_SET = 'storage_set',
-  STORAGE_CLEAR = 'storage_clear'
+  STORAGE_CLEAR = 'storage_clear',
+
+  // WhatsApp
+  GET_PENDING_WHATSAPP_GUESTS = 'get_pending_whatsapp_guests',
+  UPDATE_SHEET_STATUS = 'update_sheet_status',
+  VALIDATE_WHATSAPP_SHEET = 'validate_whatsapp_sheet',
+  START_BULK_WHATSAPP_SEND = 'start_bulk_whatsapp_send',
 }
 
 export interface PageContext {
