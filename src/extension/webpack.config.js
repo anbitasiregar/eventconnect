@@ -10,7 +10,8 @@ module.exports = {
   entry: {
     'background/service-worker': './background/service-worker.ts',
     'popup/popup': './popup/popup.tsx',
-    'content/content-script': './content/content-script.ts'
+    'content/content-script': './content/content-script.ts',
+    'content/whatsapp-automation': './content/whatsapp-automation.ts'
   },
   
   output: {
