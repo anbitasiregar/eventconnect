@@ -12,7 +12,8 @@
   "host_permissions": [
     "https://sheets.googleapis.com/*",
     "https://www.googleapis.com/*",
-    "http://localhost:3000/*"
+    "http://localhost:3000/*",
+    "https://web.whatsapp.com/*"
   ],
   "oauth2": {
     "client_id": "554258518238-9fs00eer4665qggru39lfmi4o6jrq42n.apps.googleusercontent.com",
@@ -37,11 +38,18 @@
     "service_worker": "background/service-worker.js",
     "type": "module"
   },
-  "content_scripts": [{
-    "matches": ["<all_urls>"],
-    "js": ["content/content-script.js"],
-    "run_at": "document_idle"
-  }],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/content-script.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["content/whatsapp-automation.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "web_accessible_resources": [
     {
       "resources": ["popup/*", "assets/*"],

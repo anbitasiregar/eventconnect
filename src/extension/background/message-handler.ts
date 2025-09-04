@@ -7,6 +7,7 @@ import { ExtensionMessage } from '../shared/messaging';
 import { GoogleAuthService } from './google-auth';
 import { ApiClient } from './api-client';
 import { GoogleSheetsService } from './sheets-service';
+import { WhatsAppSheetsAPI } from '../shared/sheets-api';
 import { Logger } from '../shared/logger';
 
 export class MessageHandler {
@@ -16,11 +17,18 @@ export class MessageHandler {
   private readonly RATE_LIMIT_MAX_REQUESTS = 60; // 60 requests per minute
   private requestCounts = new Map<string, { count: number; resetTime: number }>();
 
+  private whatsappSheetsAPI: WhatsAppSheetsAPI;
+
   constructor(
     private authService: GoogleAuthService,
     private apiClient: ApiClient,
     private sheetsService: GoogleSheetsService
-  ) {}
+  ) {
+    // Initialize WhatsApp Sheets API
+    this.whatsappSheetsAPI = new WhatsAppSheetsAPI(
+      () => this.authService.getValidToken()
+    );
+  }
 
   /**
    * Handle incoming extension messages
@@ -68,6 +76,10 @@ export class MessageHandler {
 
         case this.isActionMessage(message.type):
           response = await this.handleActionMessage(message);
+          break;
+
+        case this.isWhatsAppMessage(message.type):
+          response = await this.handleWhatsAppMessage(message);
           break;
 
         default:
@@ -401,10 +413,84 @@ export class MessageHandler {
   }
 
   /**
+   * Handle WhatsApp-related messages
+   */
+  private async handleWhatsAppMessage(message: ExtensionMessage): Promise<any> {
+    switch (message.type) {
+      case 'GET_PENDING_WHATSAPP_GUESTS':
+        try {
+          const { sheetId } = message.payload;
+          if (!sheetId) {
+            throw new Error('Sheet ID required');
+          }
+
+          const guests = await this.whatsappSheetsAPI.getPendingWhatsAppGuests(sheetId);
+          return { success: true, data: guests };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { success: false, error: errorMessage };
+        }
+
+      case 'UPDATE_SHEET_STATUS':
+        try {
+          const { rowNumber, status } = message.payload;
+          if (!rowNumber || !status) {
+            throw new Error('Row number and status required');
+          }
+
+          // Get current event ID from storage for sheet ID
+          const storedEventId = await chrome.storage.local.get(['currentEventId']);
+          if (!storedEventId.currentEventId) {
+            throw new Error('No current event found');
+          }
+
+          await this.whatsappSheetsAPI.updateGuestRSVPStatus(
+            storedEventId.currentEventId,
+            rowNumber,
+            status
+          );
+          
+          return { success: true };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { success: false, error: errorMessage };
+        }
+
+      case 'VALIDATE_WHATSAPP_SHEET':
+        try {
+          const { sheetId } = message.payload;
+          if (!sheetId) {
+            throw new Error('Sheet ID required');
+          }
+
+          const validation = await this.whatsappSheetsAPI.validateWhatsAppSheetStructure(sheetId);
+          return { success: true, data: validation };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { success: false, error: errorMessage };
+        }
+
+      default:
+        throw new Error(`Unknown WhatsApp message type: ${message.type}`);
+    }
+  }
+
+  /**
    * Check if message type is action-related
    */
   private isActionMessage(type: string): boolean {
     return ['EXECUTE_ACTION', 'GET_ACTION_SUGGESTIONS'].includes(type);
+  }
+
+  /**
+   * Check if message type is WhatsApp-related
+   */
+  private isWhatsAppMessage(type: string): boolean {
+    return [
+      'GET_PENDING_WHATSAPP_GUESTS',
+      'UPDATE_SHEET_STATUS', 
+      'VALIDATE_WHATSAPP_SHEET'
+    ].includes(type);
   }
 
   /**

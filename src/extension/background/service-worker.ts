@@ -10,6 +10,7 @@ import { MessageHandler } from './message-handler';
 import { config, validateConfig } from './config';
 import { Logger, initializeLogger } from '../shared/logger';
 import { setStorageItem, getStorageItem } from '../shared/storage';
+import './whatsapp-coordinator'; // Initialize WhatsApp coordinator
 
 // Initialize services
 let authService: GoogleAuthService;
