@@ -29,7 +29,7 @@ export type MessageType =
   // WhatsApp
   | 'GET_PENDING_WHATSAPP_GUESTS'
   | 'UPDATE_SHEET_STATUS'
-  | 'VALIDATE_WHATSAPP_SHEET'
+  | 'VALIDATE_WHATSAPP_SHEET' // this is never called, no one uses this message type
   | 'START_BULK_WHATSAPP_SEND'
   ;
 

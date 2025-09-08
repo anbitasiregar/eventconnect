@@ -489,7 +489,8 @@ export class MessageHandler {
     return [
       'GET_PENDING_WHATSAPP_GUESTS',
       'UPDATE_SHEET_STATUS', 
-      'VALIDATE_WHATSAPP_SHEET'
+      'VALIDATE_WHATSAPP_SHEET',
+      'START_BULK_WHATSAPP_SEND'
     ].includes(type);
   }
 
