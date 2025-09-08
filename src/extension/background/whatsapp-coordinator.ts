@@ -14,7 +14,7 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
     whatsappTabId?: number;
   } | null = null;
 
-  private readonly RETRY_ATTEMPTS = 3;
+  private readonly RETRY_ATTEMPTS = 1; // CHANGE THIS BACK!!!!!!!
   private readonly SEND_DELAY = 3000; // 3 seconds between messages
 
   /**
@@ -38,13 +38,6 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
         results: []
       };
 
-      /*
-      // Ensure WhatsApp Web is open and ready
-      const tabReady = await this.ensureWhatsAppTabReady();
-      if (!tabReady) {
-        throw new Error('WhatsApp Web is not ready. Please open WhatsApp Web and login.');
-      }
-      */
 
       // Send progress update to popup
       this.broadcastProgress();
@@ -140,9 +133,9 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
           throw new Error('WhatsApp tab not available');
         }
         */
-        // Open chat with contact
+        // Open chat with direct WhatsApp invite link
         const chatOpened = await this.sendMessageToWhatsAppTab('OPEN_CHAT', {
-          phoneNumber: guest.whatsappInviteLink
+          whatsappInviteLink: guest.whatsappInviteLink
         });
 
         if (!chatOpened) {
@@ -157,6 +150,10 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
         if (!messageSent) {
           throw new Error('Failed to send message');
         }
+
+        Logger.info("attempting to close tab")
+        // Close the WhatsApp tab after sending
+        await this.closeWhatsAppTab();
 
         // Success!
         const result: SendResult = {
@@ -225,85 +222,42 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
   }
 
   /**
-   * Ensure WhatsApp Web tab is open and ready
-   */
-  // delete this function if bug is fixed
-  private async ensureWhatsAppTabReady(): Promise<boolean> {
-    try {
-      // Check if WhatsApp Web tab already exists
-      const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
-      let whatsappTab = tabs.find(tab => tab.id);
-      if (!whatsappTab) {
-        /*
-        // Create new WhatsApp Web tab
-        Logger.info('Creating new WhatsApp Web tab');
-        whatsappTab = await chrome.tabs.create({
-          url: 'https://web.whatsapp.com',
-          active: true
-        });
-        */
-        throw new Error('No WhatsApp Web tab found');
-      } else {
-        // Focus existing tab
-        Logger.info('Focusing existing WhatsApp Web tab');
-        await chrome.tabs.update(whatsappTab.id!, { active: true });
-      }
-
-      if (!whatsappTab.id) {
-        throw new Error('Failed to create/access WhatsApp Web tab');
-      }
-
-      this.currentSendingProcess!.whatsappTabId = whatsappTab.id;
-
-      // Wait for tab to load and WhatsApp to be ready
-      await this.delay(3000);
-
-      // Check if WhatsApp is ready
-      const isReady = await this.sendMessageToWhatsAppTab('IS_READY', {});
-      
-      if (!isReady) {
-        Logger.warn('WhatsApp Web is not ready - user may need to login');
-        return false;
-      }
-
-      Logger.info('WhatsApp Web is ready for automation');
-      return true;
-
-    } catch (error) {
-      Logger.error('Failed to ensure WhatsApp tab ready', error as Error);
-      return false;
-    }
-  }
-
-  /**
    * Send message to WhatsApp Web content script
    */
   private async sendMessageToWhatsAppTab(action: string, payload: any): Promise<any> {
-    if (!this.currentSendingProcess?.whatsappTabId) {
-      throw new Error('WhatsApp tab not available');
-    }
-
     try {
-      Logger.info(`[WA DEBUG] Sending message to tab ${this.currentSendingProcess.whatsappTabId}: ${action}`);
+      Logger.info(`[WA DEBUG] Processing action in sendMessageToWhatsAppTab: ${action}`);
       
-      // Check if tab still exists before sending message
-      try {
-        const tab = await chrome.tabs.get(this.currentSendingProcess.whatsappTabId);
-        if (!tab || tab.status !== 'complete') {
-          Logger.warn('[WA DEBUG] Tab not ready or doesn\'t exist, recreating...');
-          const tabReady = await this.ensureWhatsAppTabReady();
-          if (!tabReady) {
-            throw new Error('Failed to recreate WhatsApp tab');
-          }
+      // For OPEN_CHAT, create a new tab with the invite link
+      if (action === 'OPEN_CHAT' && payload.whatsappInviteLink) {
+        Logger.info(`[WA DEBUG] Creating new tab for WhatsApp invite link: ${payload.whatsappInviteLink}`);
+        
+        const newTab = await chrome.tabs.create({
+          url: payload.whatsappInviteLink,
+          active: true
+        });
+        
+        if (!newTab.id) {
+          throw new Error('Failed to create WhatsApp tab');
         }
-      } catch (tabError) {
-        Logger.warn('[WA DEBUG] Tab check failed, attempting to recreate', tabError as Error);
-        const tabReady = await this.ensureWhatsAppTabReady();
-        if (!tabReady) {
-          throw new Error('Failed to recreate WhatsApp tab');
-        }
+        
+        // Store the new tab ID
+        this.currentSendingProcess!.whatsappTabId = newTab.id;
+
+        Logger.info(`delay 5000ms`);
+        
+        // Wait for tab to load
+        await this.delay(5000);
+        
+        Logger.info(`[WA DEBUG] WhatsApp tab created successfully: ${newTab.id}`);
+        return true;
       }
       
+      // For other actions, use the existing tab
+      if (!this.currentSendingProcess?.whatsappTabId) {
+        throw new Error('WhatsApp tab not available');
+      }
+
       // Add timeout to prevent hanging
       const messagePromise = chrome.tabs.sendMessage(
         this.currentSendingProcess.whatsappTabId,
@@ -326,40 +280,28 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
 
       Logger.info(`[WA DEBUG] Message response received: ${response.success}`);
       return response.data;
+      
     } catch (error) {
-      const errorMsg = (error as Error).message;
-      Logger.error(`[WA DEBUG] Failed to send message to WhatsApp tab: ${action}`, error as Error);
-      
-      // If it's a connection error, try to recreate the tab once
-      if (errorMsg.includes('Receiving end does not exist') || 
-          errorMsg.includes('message channel closed') ||
-          errorMsg.includes('Message timeout')) {
-        Logger.info('[WA DEBUG] Tab seems to have crashed, attempting recovery...');
-        
-        try {
-          const tabReady = await this.ensureWhatsAppTabReady();
-          if (tabReady) {
-            Logger.info('[WA DEBUG] Tab recovered, retrying message once...');
-            // Retry once after tab recovery
-            const retryResponse = await chrome.tabs.sendMessage(
-              this.currentSendingProcess.whatsappTabId!,
-              {
-                type: 'WHATSAPP_AUTOMATION',
-                action: action,
-                ...payload
-              }
-            );
-            
-            if (retryResponse.success) {
-              return retryResponse.data;
-            }
-          }
-        } catch (recoveryError) {
-          Logger.error('[WA DEBUG] Tab recovery failed', recoveryError as Error);
-        }
-      }
-      
+      Logger.error(`[WA DEBUG] Failed to process action: ${action}`, error as Error);
       throw error;
+    }
+  }
+
+  /**
+   * Close the WhatsApp tab
+   */
+  private async closeWhatsAppTab(): Promise<void> {
+    // Close the WhatsApp tab after sending
+    if (this.currentSendingProcess?.whatsappTabId) {
+      try {
+        await chrome.tabs.remove(this.currentSendingProcess.whatsappTabId);
+
+        // Clear the tab ID since we closed it
+        this.currentSendingProcess.whatsappTabId = undefined;
+        Logger.info('[WA DEBUG] WhatsApp tab closed after sending message');
+      } catch (closeError) {
+        Logger.warn('[WA DEBUG] Failed to close WhatsApp tab', closeError as Error);
+      }
     }
   }
 

@@ -143,51 +143,50 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
   }
 
   /**
-   * Send a message in the current chat
+   * Send a message in the current chat (simplified for invite link flow)
    */
   async sendMessage(message: string): Promise<boolean> {
     try {
-      Logger.info('Sending message');
-      /*
-      // Find message input box
-      const messageBox = await this.waitForElement(SELECTORS.messageBox);
-      if (!messageBox) {
-        throw new Error('Message box not found');
-      }
-
-      // Clear existing text and type message
-      await this.clearAndTypeText(messageBox, message);
-      await this.delay(500);
+      Logger.info('[WA DEBUG] Sending message via invite link flow');
       
-
-      // use message box directly
-      const messageBox = document.querySelector(SELECTORS.messageBox);
+      // Wait for page to load completely
+      await this.delay(4000);
+      /*
+      // Find message input box directly
+      const messageBox = document.querySelector('[data-testid="conversation-compose-box-input"]');
       if (!messageBox) {
-        throw new Error('Message box not found');
+        Logger.error('[WA DEBUG] Message box not found');
+        return false;
       }
-      */
 
+      // Type the message
+      if (messageBox instanceof HTMLElement) {
+        messageBox.focus();
+        if (messageBox.contentEditable === 'true') {
+          messageBox.innerText = message;
+          const inputEvent = new Event('input', { bubbles: true });
+          messageBox.dispatchEvent(inputEvent);
+        }
+      }
+      
+      await this.delay(1000);
+      */
+      Logger.info("looking for button")
       // Find and click send button
-      const sendButton = await this.waitForElement(SELECTORS.sendButton);
+      const sendButton = document.querySelector('[data-testid="compose-btn-send"]');
       if (!sendButton) {
-        throw new Error('Send button not found');
+        Logger.error('[WA DEBUG] Send button not found');
+        return false;
       }
 
       await this.clickElement(sendButton);
-      await this.delay(1000);
+      await this.delay(2000);
 
-      // Verify message was sent
-      const success = await this.detectSendSuccess();
+      Logger.info('[WA DEBUG] Message sent successfully');
+      return true;
       
-      if (success) {
-        Logger.info('Message sent successfully');
-      } else {
-        Logger.error('Message send failed');
-      }
-
-      return success;
     } catch (error) {
-      Logger.error('Error sending message', error as Error);
+      Logger.error('[WA DEBUG] Error sending message', error as Error);
       return false;
     }
   }
@@ -621,7 +620,10 @@ const whatsappAutomation = new WhatsAppAutomationImpl();
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  Logger.info(`[WA DEBUG] in onMessage.addListener: message.type: ${message.type} action: ${message.action}`);
+  
   if (message.type === 'WHATSAPP_AUTOMATION') {
+    Logger.info(`[WA DEBUG] in onMessage.addListener going into handleAutomationMessage: message.type: ${message.type}`);
     handleAutomationMessage(message, sendResponse);
     return true; // Keep message channel open for async response
   }
@@ -650,6 +652,7 @@ async function handleAutomationMessage(message: any, sendResponse: (response: an
           break;
 
       case 'SEND_MESSAGE':
+        Logger.info(`[WA DEBUG] in handleAutomationMessage SEND_MESSAGE: Sending message: ${message.message}`);
         const sent = await whatsappAutomation.sendMessage(message.message);
         sendResponse({ success: true, data: sent });
         break;
