@@ -8,6 +8,7 @@ export interface Guest {
   whatsappNumber: string;
   invitationMessage: string;
   language: string;
+  whatsappInviteLink: string;
   rsvpStatus: string;
 }
 
@@ -34,12 +35,12 @@ export interface WhatsAppMessage {
 }
 
 export interface WhatsAppAutomation {
-  searchContact(phoneNumber: string): Promise<boolean>;
-  openChat(phoneNumber: string): Promise<boolean>;
+  // searchContact(phoneNumber: string): Promise<boolean>; // CAN DELETE IF THIS BUG IS FIXED
+  openChat(whatsappInviteLink: string): Promise<boolean>;
   sendMessage(message: string): Promise<boolean>;
   detectSendSuccess(): Promise<boolean>;
-  getCurrentChat(): Promise<string | null>;
-  isWhatsAppReady(): Promise<boolean>;
+  // getCurrentChat(): Promise<string | null>; // CAN DELETE IF THIS BUG IS FIXED
+  //isWhatsAppReady(): Promise<boolean>; // CAN DELETE IF THIS BUG IS FIXED
 }
 
 export interface WhatsAppCoordinator {

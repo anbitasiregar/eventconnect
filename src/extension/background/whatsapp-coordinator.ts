@@ -38,11 +38,13 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
         results: []
       };
 
+      /*
       // Ensure WhatsApp Web is open and ready
       const tabReady = await this.ensureWhatsAppTabReady();
       if (!tabReady) {
         throw new Error('WhatsApp Web is not ready. Please open WhatsApp Web and login.');
       }
+      */
 
       // Send progress update to popup
       this.broadcastProgress();
@@ -125,21 +127,22 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
     const startTime = Date.now();
     let lastError: string | undefined;
 
-    Logger.info(`Attempting to send invitation to ${guest.fullName} (${guest.whatsappNumber})`);
+    Logger.info(`Attempting to send invitation to ${guest.fullName}`);
 
     // Retry logic
     for (let attempt = 1; attempt <= this.RETRY_ATTEMPTS; attempt++) {
       try {
-        Logger.info(`Send attempt ${attempt}/${this.RETRY_ATTEMPTS} for ${guest.fullName} : ${guest.whatsappNumber}`);
+        Logger.info(`Send attempt ${attempt}/${this.RETRY_ATTEMPTS} for ${guest.fullName}`);
 
+        /*
         // Ensure we have WhatsApp tab
         if (!this.currentSendingProcess?.whatsappTabId) {
           throw new Error('WhatsApp tab not available');
         }
-
+        */
         // Open chat with contact
         const chatOpened = await this.sendMessageToWhatsAppTab('OPEN_CHAT', {
-          phoneNumber: guest.whatsappNumber
+          phoneNumber: guest.whatsappInviteLink
         });
 
         if (!chatOpened) {
@@ -224,19 +227,22 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
   /**
    * Ensure WhatsApp Web tab is open and ready
    */
+  // delete this function if bug is fixed
   private async ensureWhatsAppTabReady(): Promise<boolean> {
     try {
       // Check if WhatsApp Web tab already exists
       const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
       let whatsappTab = tabs.find(tab => tab.id);
-
       if (!whatsappTab) {
+        /*
         // Create new WhatsApp Web tab
         Logger.info('Creating new WhatsApp Web tab');
         whatsappTab = await chrome.tabs.create({
           url: 'https://web.whatsapp.com',
           active: true
         });
+        */
+        throw new Error('No WhatsApp Web tab found');
       } else {
         // Focus existing tab
         Logger.info('Focusing existing WhatsApp Web tab');

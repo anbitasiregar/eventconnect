@@ -26,6 +26,7 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
   /**
    * Check if WhatsApp Web is ready for automation
    */
+  /*
   async isWhatsAppReady(): Promise<boolean> {
     try {
       Logger.info('Checking WhatsApp Web readiness');
@@ -59,10 +60,12 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
       return false;
     }
   }
+  */
 
   /**
    * Search for a contact by phone number with detailed logging
    */
+  /*
   async searchContact(phoneNumber: string): Promise<boolean> {
     try {
       Logger.info(`[WA DEBUG] Starting contact search for: ${phoneNumber}`);
@@ -130,65 +133,13 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
       return false;
     }
   }
+  */
 
   /**
    * Open chat with a contact
    */
-  async openChat(phoneNumber: string): Promise<boolean> {
-    try {
-      Logger.info(`[WA DEBUG] Opening chat with: ${phoneNumber}`);
-      
-      // Add tab stability check before proceeding
-      if (!this.isTabStable()) {
-        Logger.warn('[WA DEBUG] Tab not stable, waiting...');
-        await this.delay(2000);
-      }
-      
-      // First search for contact
-      const contactFound = await this.searchContact(phoneNumber);
-      if (!contactFound) {
-        Logger.warn('[WA DEBUG] Contact search failed, trying direct URL method');
-        return await this.openChatDirectURL(phoneNumber);
-      }
-
-      // Get all available chat items and log them
-      const chatItems = document.querySelectorAll(SELECTORS.chatItem);
-      Logger.info(`[WA DEBUG] Found ${chatItems.length} chat items after search`);
-      
-      if (chatItems.length === 0) {
-        Logger.warn('[WA DEBUG] No chat items found, trying direct URL method');
-        return await this.openChatDirectURL(phoneNumber);
-      }
-
-      // Try to click the first chat item with gentle method
-      const chatItem = chatItems[0];
-      Logger.info(`[WA DEBUG] Attempting to click chat item: ${chatItem.textContent?.trim()}`);
-      
-      try {
-        // Use gentle click method to avoid crashes
-        await this.gentleClickElement(chatItem);
-        Logger.info('[WA DEBUG] Chat item clicked successfully');
-      } catch (clickError) {
-        Logger.error('[WA DEBUG] Failed to click chat item, trying direct URL', clickError as Error);
-        return await this.openChatDirectURL(phoneNumber);
-      }
-
-      await this.delay(2000); // Increased delay for chat loading
-
-      // Verify chat is open with timeout protection
-      const messageBox = await this.waitForElement(SELECTORS.messageBox, 8000);
-      if (!messageBox) {
-        Logger.error(`[WA DEBUG] Message box not found after clicking, trying direct URL`);
-        return await this.openChatDirectURL(phoneNumber);
-      }
-
-      Logger.info(`[WA DEBUG] Successfully opened chat with: ${phoneNumber}`);
-      return true;
-    } catch (error) {
-      Logger.error(`[WA DEBUG] Error opening chat with ${phoneNumber}`, error as Error);
-      // Final fallback to direct URL
-      return await this.openChatDirectURL(phoneNumber);
-    }
+  async openChat(whatsappInviteLink: string): Promise<boolean> {
+    return await this.openChatDirectURL(whatsappInviteLink);
   }
 
   /**
@@ -197,7 +148,7 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
   async sendMessage(message: string): Promise<boolean> {
     try {
       Logger.info('Sending message');
-      
+      /*
       // Find message input box
       const messageBox = await this.waitForElement(SELECTORS.messageBox);
       if (!messageBox) {
@@ -207,6 +158,14 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
       // Clear existing text and type message
       await this.clearAndTypeText(messageBox, message);
       await this.delay(500);
+      
+
+      // use message box directly
+      const messageBox = document.querySelector(SELECTORS.messageBox);
+      if (!messageBox) {
+        throw new Error('Message box not found');
+      }
+      */
 
       // Find and click send button
       const sendButton = await this.waitForElement(SELECTORS.sendButton);
@@ -271,6 +230,7 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
   /**
    * Get the current chat contact name
    */
+  /*
   async getCurrentChat(): Promise<string | null> {
     try {
       const chatHeader = await this.waitForElement(SELECTORS.chatHeader, 2000);
@@ -285,10 +245,12 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
       return null;
     }
   }
+  */
 
   /**
    * Create new chat with phone number as fallback
    */
+  /*
   async createNewChatWithPhone(phoneNumber: string): Promise<boolean> {
     try {
       Logger.info(`[WA DEBUG] Attempting new chat creation for: ${phoneNumber}`);
@@ -388,10 +350,11 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
       return false;
     }
   }
-
+  */
   /**
    * Log current WhatsApp Web interface state for debugging
    */
+  /*
   private logWhatsAppState(): void {
     Logger.info('[WA DEBUG] === WhatsApp Web Interface State ===');
     
@@ -422,7 +385,7 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
     Logger.info(`[WA DEBUG] Page title: ${document.title}`);
     Logger.info(`[WA DEBUG] Current URL: ${window.location.href}`);
   }
-
+  */
   // Utility methods
 
   private async waitForElement(selector: string, timeout: number = this.WAIT_TIMEOUT): Promise<Element | null> {
@@ -461,6 +424,7 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
   /**
    * Wait for search results to populate with better detection
    */
+  /*
   private async waitForSearchResults(timeout: number = 5000): Promise<Element[]> {
     Logger.info('[WA DEBUG] Waiting for search results...');
     
@@ -489,7 +453,7 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
       setTimeout(checkResults, 2000);
     });
   }
-
+  */
   private async clickElement(element: Element): Promise<void> {
     if (element instanceof HTMLElement) {
       element.click();
@@ -504,6 +468,7 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
     }
   }
 
+  /*
   private async clearAndTypeText(element: Element, text: string): Promise<void> {
     if (element instanceof HTMLElement) {
       // For contenteditable elements
@@ -528,7 +493,8 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
       }
     }
   }
-
+  */
+  /*
   private cleanPhoneNumber(phoneNumber: string): string {
     // Remove all non-numeric characters except +
     return phoneNumber.replace(/[^\d+]/g, '');
@@ -548,9 +514,9 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
     }
     
     return cleaned;
-    */
   }
-
+  */
+ 
   /**
    * Check if tab is stable and responsive
    */
@@ -614,32 +580,31 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
   /**
    * Direct URL method for opening chats (most reliable fallback)
    */
-  private async openChatDirectURL(phoneNumber: string): Promise<boolean> {
+  private async openChatDirectURL(whatsappInviteLink: string): Promise<boolean> {
     try {
-      Logger.info(`[WA DEBUG] Using direct URL method for: ${phoneNumber}`);
-      
-      const cleanNumber = phoneNumber.replace(/[^\d]/g, ''); // Remove all non-digits
-      const whatsappUrl = `https://web.whatsapp.com/send?phone=${cleanNumber}`;
-      
-      Logger.info(`[WA DEBUG] Navigating to: ${whatsappUrl}`);
-      
+      Logger.info(`[WA DEBUG] Using direct URL method for: ${whatsappInviteLink}`);    
+
       // Use location.replace to avoid history issues
-      window.location.replace(whatsappUrl);
+      window.location.replace(whatsappInviteLink);
       
-      // Wait for page load and check for message box
-      for (let i = 0; i < 20; i++) { // 10 second timeout
-        await this.delay(500);
+      // Wait for page load
+      //for (let i = 0; i < 20; i++) { // 10 second timeout
+        //await this.delay(500);
         
+        /*
+        // check for message box
         const messageBox = document.querySelector('[data-testid="conversation-compose-box-input"]');
         if (messageBox) {
           Logger.info('[WA DEBUG] Direct URL method successful - message box found');
           return true;
         }
-      }
-      
+        */
+      //}
+      /*
       Logger.warn('[WA DEBUG] Direct URL method timeout - message box not found');
       return false;
-      
+      */
+     return true;
     } catch (error) {
       Logger.error('[WA DEBUG] Direct URL method failed', error as Error);
       return false;
@@ -666,18 +631,20 @@ async function handleAutomationMessage(message: any, sendResponse: (response: an
   try {
     switch (message.action) {
       case 'IS_READY':
-        const isReady = await whatsappAutomation.isWhatsAppReady();
-        sendResponse({ success: true, data: isReady });
+        //const isReady = await whatsappAutomation.isWhatsAppReady();
+        // CAN DELETE IF THIS BUG IS FIXED
+        sendResponse({ success: true, data: true });
         break;
 
       case 'SEARCH_CONTACT':
-        const found = await whatsappAutomation.searchContact(message.phoneNumber);
-        sendResponse({ success: true, data: found });
+        // const found = await whatsappAutomation.searchContact(message.phoneNumber);
+        // CAN DELETE IF THIS BUG IS FIXED
+        sendResponse({ success: true, data: true });
         break;
 
         case 'OPEN_CHAT':
-          Logger.info(`[WA DEBUG] in handleAutomationMessage: Opening chat with: ${message.phoneNumber}`);
-          const opened = await whatsappAutomation.openChat(message.phoneNumber);
+          Logger.info(`[WA DEBUG] in handleAutomationMessage: Opening chat with: ${message.whatsappInviteLink}`);
+          const opened = await whatsappAutomation.openChat(message.whatsappInviteLink);
           Logger.info(`[WA DEBUG] Chat open result: ${opened}`);
           sendResponse({ success: true, data: opened });
           break;
@@ -685,11 +652,6 @@ async function handleAutomationMessage(message: any, sendResponse: (response: an
       case 'SEND_MESSAGE':
         const sent = await whatsappAutomation.sendMessage(message.message);
         sendResponse({ success: true, data: sent });
-        break;
-
-      case 'GET_CURRENT_CHAT':
-        const currentChat = await whatsappAutomation.getCurrentChat();
-        sendResponse({ success: true, data: currentChat });
         break;
 
       default:

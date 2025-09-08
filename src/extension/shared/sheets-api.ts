@@ -14,6 +14,7 @@ export interface WhatsAppSheetsConfig {
     whatsappNumber: string;
     language: string;
     invitationMessage: string;
+    whatsappInviteLink: string;
     rsvpStatus: string;
   };
 }
@@ -26,6 +27,7 @@ export const DEFAULT_CONFIG: WhatsAppSheetsConfig = {
     whatsappNumber: 'WhatsApp Number',
     language: 'Language',
     invitationMessage: 'Invitation Message',
+    whatsappInviteLink: 'WhatsApp Invite Link',
     rsvpStatus: 'RSVP Status'
   }
 };
@@ -69,11 +71,12 @@ export class WhatsAppSheetsAPI {
             whatsappNumber: row[columnMap.whatsappNumber] || '',
             invitationMessage: row[columnMap.invitationMessage] || '',
             language: row[columnMap.language] || 'English',
+            whatsappInviteLink: row[columnMap.whatsappInviteLink] || '',
             rsvpStatus: rsvpStatus
           };
 
           // Validate required fields
-          if (guest.fullName && guest.whatsappNumber && guest.invitationMessage) {
+          if (guest.fullName && guest.whatsappInviteLink) {
             pendingGuests.push(guest);
           } else {
             Logger.warn(`Skipping incomplete guest data at row ${i + 1}`);
@@ -180,6 +183,7 @@ export class WhatsAppSheetsAPI {
           whatsappNumber: row[columnMap.whatsappNumber] || '',
           invitationMessage: row[columnMap.invitationMessage] || '',
           language: row[columnMap.language] || 'English',
+          whatsappInviteLink: row[columnMap.whatsappInviteLink] || '',
           rsvpStatus: row[columnMap.rsvpStatus] || ''
         };
 
