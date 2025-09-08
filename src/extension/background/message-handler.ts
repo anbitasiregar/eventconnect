@@ -470,6 +470,11 @@ export class MessageHandler {
           return { success: false, error: errorMessage };
         }
 
+      case 'START_BULK_WHATSAPP_SEND':
+        // Placeholder for bulk WhatsApp send
+        Logger.info('Starting bulk WhatsApp send');
+        return { success: true };
+
       default:
         throw new Error(`Unknown WhatsApp message type: ${message.type}`);
     }
