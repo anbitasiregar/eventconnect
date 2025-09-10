@@ -5,6 +5,7 @@
 
 import { Guest, SendProgress, SendResult, WhatsAppCoordinator, WhatsAppMessage } from '../shared/whatsapp-types';
 import { Logger } from '../shared/logger';
+import { messageHandler } from './service-worker';
 
 class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
   private currentSendingProcess: {
@@ -136,15 +137,18 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
       
       // Only update sheets if message actually sent
       if (messageResult === true) {
-        // Use existing message handler for sheet update
+        // Use the existing, properly initialized messageHandler
         try {
-          const updateResult = await chrome.runtime.sendMessage({
-            type: 'UPDATE_SHEET_STATUS',
-            payload: { 
-              rowNumber: guest.rowNumber, 
-              status: 'Invite Sent (WA)' 
-            }
-          });
+          const updateResult = await messageHandler.handleMessage(
+            {
+              type: 'UPDATE_SHEET_STATUS',
+              payload: { 
+                rowNumber: guest.rowNumber, 
+                status: 'Invite Sent (WA)' 
+              }
+            },
+            { id: 'whatsapp-coordinator' } // Add the required sender parameter
+          );
           
           if (updateResult.success) {
             Logger.info(`[WA DEBUG] Sheet status updated for ${guest.fullName}`);
@@ -152,7 +156,7 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
             Logger.error(`[WA DEBUG] Sheet update failed: ${updateResult.error}`);
           }
         } catch (sheetError) {
-          Logger.error(`[WA DEBUG] Failed to send sheet update message: ${(sheetError as Error).message}`);
+          Logger.error(`[WA DEBUG] Failed to update sheet: ${(sheetError as Error).message}`);
         }
       }
       

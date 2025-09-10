@@ -35,17 +35,11 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
    */
   async sendMessage(message: string): Promise<boolean> {
     try {
-      Logger.info('[WA DEBUG] Starting simplified sendMessage - just clicking send button');
-      
       // Wait for WhatsApp Web to fully load and populate the message
       await this.delay(5000);
-      Logger.info('[WA DEBUG] Page load delay complete, looking for send button');
       
       // Verify message box has content (optional check)
       const messageBox = document.querySelector('[data-testid="conversation-compose-box-input"]');
-      if (messageBox) {
-        Logger.info('[WA DEBUG] Message box content:', (messageBox as HTMLElement).innerText);
-      }
       
       // Find send button with multiple selectors
       const sendSelectors = [
@@ -67,24 +61,21 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
       }
       
       if (!sendButton) {
-        Logger.error('[WA DEBUG] Send button not found');
         Logger.info('[WA DEBUG] Send button not found. Available buttons: ' + 
           Array.from(document.querySelectorAll('button')).map(b => b.outerHTML.substring(0, 100)).join(', ')
         );
         return false;
       }
-  
-      Logger.info('[WA DEBUG] Clicking send button');
+
       await this.clickElement(sendButton);
       
       // Wait a moment to confirm send
       await this.delay(2000);
   
-      Logger.info('[WA DEBUG] Send button clicked successfully');
       return true;
       
     } catch (error) {
-      Logger.error('[WA DEBUG] Error in simplified sendMessage:', error as Error);
+      Logger.error('[WA DEBUG] Error in sendMessage:', error as Error);
       return false;
     }
   }

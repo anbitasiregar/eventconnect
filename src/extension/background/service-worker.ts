@@ -245,3 +245,6 @@ async function refreshCurrentEventContext(): Promise<void> {
     Logger.error('Failed to refresh event context', error as Error);
   }
 }
+
+// Export message handler for WhatsApp coordinator
+export { messageHandler };
