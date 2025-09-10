@@ -117,77 +117,68 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
    * Send invitation to a single guest
    */
   async sendToSingleGuest(guest: Guest): Promise<SendResult> {
-    const startTime = Date.now();
-    let lastError: string | undefined;
-
-    Logger.info(`Attempting to send invitation to ${guest.fullName}`);
-
-    // Retry logic
-    for (let attempt = 1; attempt <= this.RETRY_ATTEMPTS; attempt++) {
-      try {
-        Logger.info(`Send attempt ${attempt}/${this.RETRY_ATTEMPTS} for ${guest.fullName}`);
-
-        /*
-        // Ensure we have WhatsApp tab
-        if (!this.currentSendingProcess?.whatsappTabId) {
-          throw new Error('WhatsApp tab not available');
-        }
-        */
-        // Open chat with direct WhatsApp invite link
-        const chatOpened = await this.sendMessageToWhatsAppTab('OPEN_CHAT', {
-          whatsappInviteLink: guest.whatsappInviteLink
-        });
-
-        if (!chatOpened) {
-          throw new Error('Failed to open chat with contact');
-        }
-
-        // Send the invitation message
-        const messageSent = await this.sendMessageToWhatsAppTab('SEND_MESSAGE', {
-          message: guest.invitationMessage
-        });
-
-        if (!messageSent) {
-          throw new Error('Failed to send message');
-        }
-
-        Logger.info("attempting to close tab")
-        // Close the WhatsApp tab after sending
-        await this.closeWhatsAppTab();
-
-        // Success!
-        const result: SendResult = {
-          success: true,
-          guestName: guest.fullName,
-          phoneNumber: guest.whatsappNumber,
-          timestamp: Date.now()
-        };
-
-        Logger.info(`Successfully sent invitation to ${guest.fullName}`);
-        return result;
-
-      } catch (error) {
-        lastError = (error as Error).message;
-        Logger.warn(`Send attempt ${attempt} failed for ${guest.fullName}: ${lastError}`);
-
-        // Wait before retry (except on last attempt)
-        if (attempt < this.RETRY_ATTEMPTS) {
-          await this.delay(2000);
+    const timestamp = Date.now();
+    
+    try {
+      Logger.info(`Attempting to send invitation to ${guest.fullName}`);
+      
+      // Open chat with invite link
+      await this.sendMessageToWhatsAppTab('OPEN_CHAT', {
+        whatsappInviteLink: guest.whatsappInviteLink
+      });
+      
+      // Send message
+      const messageResult = await this.sendMessageToWhatsAppTab('SEND_MESSAGE', {
+        message: guest.invitationMessage
+      });
+      
+      Logger.info(`[WA DEBUG] Message send result: ${messageResult}`);
+      
+      // Only update sheets if message actually sent
+      if (messageResult === true) {
+        // Use existing message handler for sheet update
+        try {
+          const updateResult = await chrome.runtime.sendMessage({
+            type: 'UPDATE_SHEET_STATUS',
+            payload: { 
+              rowNumber: guest.rowNumber, 
+              status: 'Invite Sent (WA)' 
+            }
+          });
+          
+          if (updateResult.success) {
+            Logger.info(`[WA DEBUG] Sheet status updated for ${guest.fullName}`);
+          } else {
+            Logger.error(`[WA DEBUG] Sheet update failed: ${updateResult.error}`);
+          }
+        } catch (sheetError) {
+          Logger.error(`[WA DEBUG] Failed to send sheet update message: ${(sheetError as Error).message}`);
         }
       }
+      
+      // Wait before closing tab
+      await this.delay(3000);
+      await this.closeWhatsAppTab();
+      
+      return {
+        success: messageResult === true,
+        guestName: guest.fullName,
+        phoneNumber: guest.whatsappNumber,
+        timestamp
+      };
+      
+    } catch (error) {
+      Logger.error(`Failed to send invitation to ${guest.fullName}`, error as Error);
+      await this.closeWhatsAppTab();
+      
+      return {
+        success: false,
+        guestName: guest.fullName,
+        phoneNumber: guest.whatsappNumber,
+        error: (error as Error).message,
+        timestamp
+      };
     }
-
-    // All attempts failed
-    const result: SendResult = {
-      success: false,
-      guestName: guest.fullName,
-      phoneNumber: guest.whatsappNumber,
-      error: lastError || 'Unknown error',
-      timestamp: Date.now()
-    };
-
-    Logger.error(`Failed to send invitation to ${guest.fullName} after ${this.RETRY_ATTEMPTS} attempts`);
-    return result;
   }
 
   /**
@@ -226,9 +217,9 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
    */
   private async sendMessageToWhatsAppTab(action: string, payload: any): Promise<any> {
     try {
-      Logger.info(`[WA DEBUG] Processing action in sendMessageToWhatsAppTab: ${action}`);
+      Logger.info(`[WA DEBUG] Processing action: ${action}`);
       
-      // For OPEN_CHAT, create a new tab with the invite link
+      // For OPEN_CHAT, create new tab
       if (action === 'OPEN_CHAT' && payload.whatsappInviteLink) {
         Logger.info(`[WA DEBUG] Creating new tab for WhatsApp invite link: ${payload.whatsappInviteLink}`);
         
@@ -241,45 +232,54 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
           throw new Error('Failed to create WhatsApp tab');
         }
         
-        // Store the new tab ID
         this.currentSendingProcess!.whatsappTabId = newTab.id;
-
-        Logger.info(`delay 5000ms`);
         
         // Wait for tab to load
         await this.delay(5000);
-        
         Logger.info(`[WA DEBUG] WhatsApp tab created successfully: ${newTab.id}`);
         return true;
       }
       
-      // For other actions, use the existing tab
-      if (!this.currentSendingProcess?.whatsappTabId) {
-        throw new Error('WhatsApp tab not available');
-      }
-
-      // Add timeout to prevent hanging
-      const messagePromise = chrome.tabs.sendMessage(
-        this.currentSendingProcess.whatsappTabId,
-        {
-          type: 'WHATSAPP_AUTOMATION',
-          action: action,
-          ...payload
+      // For SEND_MESSAGE, send to content script
+      if (action === 'SEND_MESSAGE') {
+        const tabId = this.currentSendingProcess?.whatsappTabId;
+        if (!tabId) {
+          throw new Error('No WhatsApp tab available');
         }
-      );
-      
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Message timeout after 15 seconds')), 15000);
-      });
-      
-      const response = await Promise.race([messagePromise, timeoutPromise]);
-
-      if (!response.success) {
-        throw new Error(response.error || 'WhatsApp automation failed');
+        
+        Logger.info(`[WA DEBUG] Sending message to tab ${tabId}`);
+        
+        // Send message to content script with proper error handling
+        return new Promise((resolve, reject) => {
+          chrome.tabs.sendMessage(tabId, {
+            type: 'WHATSAPP_AUTOMATION',
+            action: 'SEND_MESSAGE',
+            message: payload.message
+          }, (response) => {
+            if (chrome.runtime.lastError) {
+              Logger.error(`[WA DEBUG] Chrome runtime error: ${chrome.runtime.lastError.message}`);
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
+            
+            if (!response) {
+              Logger.error(`[WA DEBUG] No response from content script`);
+              reject(new Error('No response from content script'));
+              return;
+            }
+            
+            Logger.info(`[WA DEBUG] Content script response:`, response);
+            
+            if (response.success && response.data === true) {
+              resolve(response.data);
+            } else {
+              reject(new Error(response.error || 'Message send failed - content script returned false'));
+            }
+          });
+        });
       }
-
-      Logger.info(`[WA DEBUG] Message response received: ${response.success}`);
-      return response.data;
+      
+      throw new Error(`Unknown action: ${action}`);
       
     } catch (error) {
       Logger.error(`[WA DEBUG] Failed to process action: ${action}`, error as Error);

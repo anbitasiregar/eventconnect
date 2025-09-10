@@ -24,118 +24,6 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
   private readonly RETRY_COUNT = 3;
 
   /**
-   * Check if WhatsApp Web is ready for automation
-   */
-  /*
-  async isWhatsAppReady(): Promise<boolean> {
-    try {
-      Logger.info('Checking WhatsApp Web readiness');
-      
-      // Check if we're on WhatsApp Web
-      if (!window.location.hostname.includes('web.whatsapp.com')) {
-        Logger.warn('Not on WhatsApp Web domain');
-        return false;
-      }
-
-      // Check for main interface elements
-      const searchBox = await this.waitForElement(SELECTORS.searchBox, 5000);
-      const contactList = await this.waitForElement(SELECTORS.contactList, 5000);
-      
-      if (!searchBox || !contactList) {
-        Logger.warn('WhatsApp Web main interface not found');
-        return false;
-      }
-
-      // Check if logged in (no QR code present)
-      const qrCode = document.querySelector('[data-testid="qr-code"]');
-      if (qrCode) {
-        Logger.warn('WhatsApp Web showing QR code - user needs to login');
-        return false;
-      }
-
-      Logger.info('WhatsApp Web is ready for automation');
-      return true;
-    } catch (error) {
-      Logger.error('Error checking WhatsApp Web readiness', error as Error);
-      return false;
-    }
-  }
-  */
-
-  /**
-   * Search for a contact by phone number with detailed logging
-   */
-  /*
-  async searchContact(phoneNumber: string): Promise<boolean> {
-    try {
-      Logger.info(`[WA DEBUG] Starting contact search for: ${phoneNumber}`);
-      
-      // Clean phone number with multiple formats
-      const cleanNumber = this.cleanPhoneNumber(phoneNumber);
-      Logger.info(`[WA DEBUG] Cleaned phone number: ${cleanNumber}`);
-      
-      // Log current DOM state
-      const searchBoxes = document.querySelectorAll('[data-testid="chat-list-search"], [title="Search input textbox"], [data-tab="3"]');
-      Logger.info(`[WA DEBUG] Found ${searchBoxes.length} search box elements`);
-      
-      // Find and click search box
-      const searchBox = await this.waitForElement(SELECTORS.searchBox);
-      if (!searchBox) {
-        Logger.error('[WA DEBUG] Search box not found - checking WhatsApp Web interface state');
-        this.logWhatsAppState();
-        throw new Error('Search box not found');
-      }
-
-      Logger.info('[WA DEBUG] Search box found, clicking...');
-      await this.clickElement(searchBox);
-      await this.delay(500);
-
-      // Find search input and enter phone number
-      const searchInputs = document.querySelectorAll('[data-testid="chat-list-search"] div[contenteditable="true"], #side div[contenteditable="true"]');
-      Logger.info(`[WA DEBUG] Found ${searchInputs.length} search input elements`);
-      
-      const searchInput = await this.waitForElement(SELECTORS.searchInput);
-      if (!searchInput) {
-        Logger.error('[WA DEBUG] Search input not found after clicking search box');
-        throw new Error('Search input not found');
-      }
-
-      Logger.info(`[WA DEBUG] Typing phone number: ${cleanNumber}`);
-      await this.clearAndTypeText(searchInput, cleanNumber);
-      
-      // Wait and log search progress
-      Logger.info('[WA DEBUG] Waiting for search results...');
-      await this.delay(3000); // Increased wait time
-
-      // Check multiple search result selectors
-      const chatItems = document.querySelectorAll('[data-testid="list-item-"] span[title], [data-testid="cell-frame-container"] span[title]');
-      Logger.info(`[WA DEBUG] Found ${chatItems.length} chat items after search`);
-      
-      if (chatItems.length > 0) {
-        Array.from(chatItems).forEach((item, index) => {
-          const title = item.getAttribute('title') || item.textContent || '';
-          Logger.info(`[WA DEBUG] Chat item ${index}: ${title}`);
-        });
-      }
-
-      const contactFound = await this.waitForElement(SELECTORS.chatItem, 2000);
-      
-      if (!contactFound) {
-        Logger.warn(`[WA DEBUG] Contact not found for phone number: ${phoneNumber}`);
-        Logger.info('[WA DEBUG] Attempting new chat creation fallback...');
-        return await this.createNewChatWithPhone(cleanNumber);
-      }
-
-      Logger.info(`[WA DEBUG] Contact found for: ${phoneNumber}`);
-      return true;
-    } catch (error) {
-      Logger.error(`[WA DEBUG] Error searching for contact ${phoneNumber}`, error as Error);
-      return false;
-    }
-  }
-  */
-
-  /**
    * Open chat with a contact
    */
   async openChat(whatsappInviteLink: string): Promise<boolean> {
@@ -147,46 +35,56 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
    */
   async sendMessage(message: string): Promise<boolean> {
     try {
-      Logger.info('[WA DEBUG] Sending message via invite link flow');
+      Logger.info('[WA DEBUG] Starting simplified sendMessage - just clicking send button');
       
-      // Wait for page to load completely
-      await this.delay(4000);
-      /*
-      // Find message input box directly
+      // Wait for WhatsApp Web to fully load and populate the message
+      await this.delay(5000);
+      Logger.info('[WA DEBUG] Page load delay complete, looking for send button');
+      
+      // Verify message box has content (optional check)
       const messageBox = document.querySelector('[data-testid="conversation-compose-box-input"]');
-      if (!messageBox) {
-        Logger.error('[WA DEBUG] Message box not found');
-        return false;
+      if (messageBox) {
+        Logger.info('[WA DEBUG] Message box content:', (messageBox as HTMLElement).innerText);
       }
-
-      // Type the message
-      if (messageBox instanceof HTMLElement) {
-        messageBox.focus();
-        if (messageBox.contentEditable === 'true') {
-          messageBox.innerText = message;
-          const inputEvent = new Event('input', { bubbles: true });
-          messageBox.dispatchEvent(inputEvent);
+      
+      // Find send button with multiple selectors
+      const sendSelectors = [
+        '[data-testid="compose-btn-send"]',
+        '[data-testid="send-button"]', 
+        'button[aria-label="Send"]',
+        '.selectable-text[aria-label="Send"]',
+        '[data-icon="send"]',
+        'span[data-icon="send"]'
+      ];
+      
+      let sendButton = null;
+      for (const selector of sendSelectors) {
+        sendButton = document.querySelector(selector);
+        if (sendButton) {
+          Logger.info(`[WA DEBUG] Send button found with selector: ${selector}`);
+          break;
         }
       }
       
-      await this.delay(1000);
-      */
-      Logger.info("looking for button")
-      // Find and click send button
-      const sendButton = document.querySelector('[data-testid="compose-btn-send"]');
       if (!sendButton) {
         Logger.error('[WA DEBUG] Send button not found');
+        Logger.info('[WA DEBUG] Send button not found. Available buttons: ' + 
+          Array.from(document.querySelectorAll('button')).map(b => b.outerHTML.substring(0, 100)).join(', ')
+        );
         return false;
       }
-
+  
+      Logger.info('[WA DEBUG] Clicking send button');
       await this.clickElement(sendButton);
+      
+      // Wait a moment to confirm send
       await this.delay(2000);
-
-      Logger.info('[WA DEBUG] Message sent successfully');
+  
+      Logger.info('[WA DEBUG] Send button clicked successfully');
       return true;
       
     } catch (error) {
-      Logger.error('[WA DEBUG] Error sending message', error as Error);
+      Logger.error('[WA DEBUG] Error in simplified sendMessage:', error as Error);
       return false;
     }
   }
@@ -226,165 +124,6 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
     }
   }
 
-  /**
-   * Get the current chat contact name
-   */
-  /*
-  async getCurrentChat(): Promise<string | null> {
-    try {
-      const chatHeader = await this.waitForElement(SELECTORS.chatHeader, 2000);
-      if (!chatHeader) {
-        return null;
-      }
-
-      const contactName = chatHeader.querySelector('span[title]');
-      return contactName?.getAttribute('title') || null;
-    } catch (error) {
-      Logger.error('Error getting current chat', error as Error);
-      return null;
-    }
-  }
-  */
-
-  /**
-   * Create new chat with phone number as fallback
-   */
-  /*
-  async createNewChatWithPhone(phoneNumber: string): Promise<boolean> {
-    try {
-      Logger.info(`[WA DEBUG] Attempting new chat creation for: ${phoneNumber}`);
-      
-      // Method 1: Try to find and click new chat button
-      const newChatSelectors = [
-        '[data-testid="new-chat-button"]',
-        '[title="New chat"]',
-        '[data-icon="new-chat-outline"]',
-        'div[title="New chat"]'
-      ];
-      
-      let newChatButton: Element | null = null;
-      for (const selector of newChatSelectors) {
-        newChatButton = document.querySelector(selector);
-        if (newChatButton) {
-          Logger.info(`[WA DEBUG] Found new chat button with selector: ${selector}`);
-          break;
-        }
-      }
-      
-      if (newChatButton) {
-        Logger.info('[WA DEBUG] Clicking new chat button');
-        await this.clickElement(newChatButton);
-        await this.delay(2000);
-        
-        // Try to find phone input in new chat interface
-        const phoneInputSelectors = [
-          '[data-testid="new-chat-phone-input"]',
-          'input[type="tel"]',
-          'input[placeholder*="phone"]',
-          'div[contenteditable="true"][data-tab="2"]'
-        ];
-        
-        let phoneInput: Element | null = null;
-        for (const selector of phoneInputSelectors) {
-          phoneInput = document.querySelector(selector);
-          if (phoneInput) {
-            Logger.info(`[WA DEBUG] Found phone input with selector: ${selector}`);
-            break;
-          }
-        }
-        
-        if (phoneInput) {
-          Logger.info(`[WA DEBUG] Entering phone number: ${phoneNumber}`);
-          await this.clearAndTypeText(phoneInput, phoneNumber);
-          await this.delay(2000);
-          
-          // Look for start chat button
-          const startChatSelectors = [
-            '[data-testid="start-chat-button"]',
-            'button[data-testid="compose-btn-send"]',
-            'span[data-icon="send"]'
-          ];
-          
-          let startChatButton: Element | null = null;
-          for (const selector of startChatSelectors) {
-            startChatButton = document.querySelector(selector);
-            if (startChatButton) {
-              Logger.info(`[WA DEBUG] Found start chat button with selector: ${selector}`);
-              break;
-            }
-          }
-          
-          if (startChatButton) {
-            await this.clickElement(startChatButton);
-            await this.delay(3000);
-            
-            // Check if chat opened
-            const messageBox = document.querySelector('[data-testid="conversation-compose-box-input"]');
-            if (messageBox) {
-              Logger.info('[WA DEBUG] New chat created successfully');
-              return true;
-            }
-          }
-        }
-      }
-      
-      // Method 2: Direct URL navigation as fallback
-      Logger.info('[WA DEBUG] Trying direct URL method');
-      const cleanNumber = phoneNumber.replace(/[^\d]/g, ''); // Remove all non-digits
-      const whatsappUrl = `https://web.whatsapp.com/send?phone=${cleanNumber}`;
-      
-      Logger.info(`[WA DEBUG] Navigating to: ${whatsappUrl}`);
-      window.location.href = whatsappUrl;
-      await this.delay(5000); // Wait longer for page load
-      
-      // Check if message box is available
-      const messageBox = await this.waitForElement('[data-testid="conversation-compose-box-input"]', 10000);
-      const success = !!messageBox;
-      
-      Logger.info(`[WA DEBUG] Direct URL method result: ${success}`);
-      return success;
-      
-    } catch (error) {
-      Logger.error('[WA DEBUG] New chat creation failed', error as Error);
-      return false;
-    }
-  }
-  */
-  /**
-   * Log current WhatsApp Web interface state for debugging
-   */
-  /*
-  private logWhatsAppState(): void {
-    Logger.info('[WA DEBUG] === WhatsApp Web Interface State ===');
-    
-    // Check main containers
-    const mainContainers = [
-      '#app',
-      '[data-testid="main"]',
-      '#side',
-      '[data-testid="chat-list"]'
-    ];
-    
-    mainContainers.forEach(selector => {
-      const element = document.querySelector(selector);
-      Logger.info(`[WA DEBUG] ${selector}: ${element ? 'Found' : 'Not found'}`);
-    });
-    
-    // Check search elements
-    const searchElements = document.querySelectorAll('[data-testid*="search"], [title*="Search"], [placeholder*="Search"]');
-    Logger.info(`[WA DEBUG] Search elements found: ${searchElements.length}`);
-    
-    // Check if logged in
-    const qrCode = document.querySelector('[data-testid="qr-code"]');
-    const loginElements = document.querySelectorAll('[data-testid*="qr"], [data-testid*="login"]');
-    Logger.info(`[WA DEBUG] QR Code present: ${!!qrCode}`);
-    Logger.info(`[WA DEBUG] Login elements: ${loginElements.length}`);
-    
-    // Log page title and URL
-    Logger.info(`[WA DEBUG] Page title: ${document.title}`);
-    Logger.info(`[WA DEBUG] Current URL: ${window.location.href}`);
-  }
-  */
   // Utility methods
 
   private async waitForElement(selector: string, timeout: number = this.WAIT_TIMEOUT): Promise<Element | null> {
@@ -420,39 +159,6 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
     });
   }
 
-  /**
-   * Wait for search results to populate with better detection
-   */
-  /*
-  private async waitForSearchResults(timeout: number = 5000): Promise<Element[]> {
-    Logger.info('[WA DEBUG] Waiting for search results...');
-    
-    const startTime = Date.now();
-    let lastCount = 0;
-    
-    return new Promise((resolve) => {
-      const checkResults = () => {
-        const results = document.querySelectorAll('[data-testid="cell-frame-container"], [data-testid="list-item-"]');
-        const currentCount = results.length;
-        
-        Logger.info(`[WA DEBUG] Search results count: ${currentCount}`);
-        
-        // If results stabilized or timeout reached
-        if ((currentCount > 0 && currentCount === lastCount) || Date.now() - startTime > timeout) {
-          Logger.info(`[WA DEBUG] Search results stabilized at ${currentCount} items`);
-          resolve(Array.from(results));
-          return;
-        }
-        
-        lastCount = currentCount;
-        setTimeout(checkResults, 1000);
-      };
-      
-      // Start checking after initial delay
-      setTimeout(checkResults, 2000);
-    });
-  }
-  */
   private async clickElement(element: Element): Promise<void> {
     if (element instanceof HTMLElement) {
       element.click();
@@ -466,55 +172,6 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
       element.dispatchEvent(event);
     }
   }
-
-  /*
-  private async clearAndTypeText(element: Element, text: string): Promise<void> {
-    if (element instanceof HTMLElement) {
-      // For contenteditable elements
-      if (element.contentEditable === 'true') {
-        element.focus();
-        element.innerText = '';
-        
-        // Simulate typing
-        element.innerText = text;
-        
-        // Trigger input events
-        const inputEvent = new Event('input', { bubbles: true });
-        element.dispatchEvent(inputEvent);
-      } else if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-        // For regular input elements
-        element.focus();
-        element.value = '';
-        element.value = text;
-        
-        const inputEvent = new Event('input', { bubbles: true });
-        element.dispatchEvent(inputEvent);
-      }
-    }
-  }
-  */
-  /*
-  private cleanPhoneNumber(phoneNumber: string): string {
-    // Remove all non-numeric characters except +
-    return phoneNumber.replace(/[^\d+]/g, '');
-    
-    /*
-    let cleaned = phoneNumber.replace(/[^\d+]/g, '');
-    
-    // Log different formats for debugging
-    Logger.info(`[WA DEBUG] Original number: ${phoneNumber}`);
-    Logger.info(`[WA DEBUG] Cleaned number: ${cleaned}`);
-    
-    // If number doesn't start with +, try adding country code
-    if (!cleaned.startsWith('+')) {
-      // Try with +65 for Singapore (common format)
-      const withCountryCode = '+65' + cleaned;
-      Logger.info(`[WA DEBUG] Trying with country code: ${withCountryCode}`);
-    }
-    
-    return cleaned;
-  }
-  */
  
   /**
    * Check if tab is stable and responsive
@@ -586,23 +243,6 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
       // Use location.replace to avoid history issues
       window.location.replace(whatsappInviteLink);
       
-      // Wait for page load
-      //for (let i = 0; i < 20; i++) { // 10 second timeout
-        //await this.delay(500);
-        
-        /*
-        // check for message box
-        const messageBox = document.querySelector('[data-testid="conversation-compose-box-input"]');
-        if (messageBox) {
-          Logger.info('[WA DEBUG] Direct URL method successful - message box found');
-          return true;
-        }
-        */
-      //}
-      /*
-      Logger.warn('[WA DEBUG] Direct URL method timeout - message box not found');
-      return false;
-      */
      return true;
     } catch (error) {
       Logger.error('[WA DEBUG] Direct URL method failed', error as Error);
@@ -665,5 +305,3 @@ async function handleAutomationMessage(message: any, sendResponse: (response: an
     sendResponse({ success: false, error: (error as Error).message });
   }
 }
-
-Logger.info('WhatsApp automation content script loaded');
