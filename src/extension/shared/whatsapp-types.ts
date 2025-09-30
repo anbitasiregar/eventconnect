@@ -10,6 +10,12 @@ export interface Guest {
   language: string;
   whatsappInviteLink: string;
   rsvpStatus: string;
+  // Ceremony attendance flags (will be dynamically determined from sheet columns)
+  pengajian?: boolean;
+  siraman?: boolean;
+  akadNikah?: boolean;
+  syukuran?: boolean;
+  [key: string]: any; // Allow dynamic ceremony properties
 }
 
 export interface SendProgress {
@@ -25,6 +31,7 @@ export interface SendResult {
   success: boolean;
   guestName: string;
   phoneNumber: string;
+  videosSent?: boolean;
   error?: string;
   timestamp: number;
 }

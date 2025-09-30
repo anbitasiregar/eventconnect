@@ -241,6 +241,120 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
     }
   }
 
+  /**
+   * Send video file as separate message
+   */
+  async sendVideo(videoBlob: Blob, filename: string): Promise<boolean> {
+    try {
+      Logger.info(`[WA DEBUG] Sending video: ${filename} (${videoBlob.size} bytes)`);
+      
+      await this.delay(2000);
+      
+      // Find attachment clip button
+      const attachButton = document.querySelector('[data-testid="compose-btn-attach"]') ||
+                          document.querySelector('[data-testid="clip"]') ||
+                          document.querySelector('[title*="Attach"]') ||
+                          document.querySelector('[aria-label*="Attach"]');
+      
+      if (!attachButton) {
+        Logger.error('[WA DEBUG] Attachment button not found');
+        return false;
+      }
+      
+      Logger.info('[WA DEBUG] Found attachment button, clicking...');
+      await this.clickElement(attachButton);
+      await this.delay(1000);
+      
+      // Look for document/media option
+      const mediaButton = document.querySelector('[data-testid="attach-document"]') ||
+                         document.querySelector('[aria-label*="Photos & Videos"]') ||
+                         document.querySelector('[title*="Photos & Videos"]');
+      
+      if (mediaButton) {
+        Logger.info('[WA DEBUG] Found media button, clicking...');
+        await this.clickElement(mediaButton);
+        await this.delay(1000);
+      }
+      
+      // Create and trigger file input
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.accept = 'video/*';
+      fileInput.style.display = 'none';
+      document.body.appendChild(fileInput);
+      
+      // Create file from blob
+      const file = new File([videoBlob], filename, { type: 'video/mp4' });
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      fileInput.files = dataTransfer.files;
+      
+      Logger.info(`[WA DEBUG] Created file input with video: ${filename}`);
+      
+      // Trigger file selection
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+      await this.delay(3000); // Wait for video to process
+      
+      // Wait for send button to appear
+      let sendButton = null;
+      for (let i = 0; i < 10; i++) {
+        sendButton = document.querySelector('[data-testid="compose-btn-send"]') ||
+                    document.querySelector('[aria-label*="Send"]');
+        if (sendButton) break;
+        await this.delay(1000);
+      }
+      
+      if (!sendButton) {
+        Logger.error('[WA DEBUG] Send button not found for video');
+        document.body.removeChild(fileInput);
+        return false;
+      }
+      
+      Logger.info('[WA DEBUG] Found send button for video, sending...');
+      await this.clickElement(sendButton);
+      await this.delay(4000); // Wait longer for video upload
+      
+      // Clean up
+      document.body.removeChild(fileInput);
+      
+      Logger.info('[WA DEBUG] Video sent successfully');
+      return true;
+      
+    } catch (error) {
+      Logger.error('[WA DEBUG] Error sending video:', error as Error);
+      return false;
+    }
+  }
+
+  /**
+   * Send multiple videos sequentially
+   */
+  async sendCeremonyVideos(videos: Array<{filename: string, blob: Blob}>): Promise<boolean> {
+    try {
+      Logger.info(`[WA DEBUG] Sending ${videos.length} ceremony videos`);
+      
+      let allSent = true;
+      
+      for (const video of videos) {
+        Logger.info(`[WA DEBUG] Sending video: ${video.filename}`);
+        const sent = await this.sendVideo(video.blob, video.filename);
+        if (!sent) {
+          allSent = false;
+          Logger.error(`[WA DEBUG] Failed to send: ${video.filename}`);
+        }
+        
+        // Wait between videos to avoid overwhelming WhatsApp
+        await this.delay(3000);
+      }
+      
+      Logger.info(`[WA DEBUG] Finished sending ceremony videos. Success: ${allSent}`);
+      return allSent;
+    } catch (error) {
+      Logger.error('[WA DEBUG] Error sending ceremony videos:', error as Error);
+      return false;
+    }
+  }
+
   private async delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
@@ -286,6 +400,12 @@ async function handleAutomationMessage(message: any, sendResponse: (response: an
         Logger.info(`[WA DEBUG] in handleAutomationMessage SEND_MESSAGE: Sending message: ${message.message}`);
         const sent = await whatsappAutomation.sendMessage(message.message);
         sendResponse({ success: true, data: sent });
+        break;
+
+      case 'SEND_VIDEOS':
+        Logger.info(`[WA DEBUG] in handleAutomationMessage SEND_VIDEOS: Sending ${message.videos?.length || 0} videos`);
+        const videosSent = await whatsappAutomation.sendCeremonyVideos(message.videos || []);
+        sendResponse({ success: true, data: videosSent });
         break;
 
       default:

@@ -475,6 +475,54 @@ export class MessageHandler {
         Logger.info('Starting bulk WhatsApp send');
         return { success: true };
 
+      case 'GET_CEREMONIES':
+        try {
+          const { sheetId } = message.payload;
+          if (!sheetId) {
+            throw new Error('Sheet ID required');
+          }
+
+          const ceremonies = await this.whatsappSheetsAPI.getCeremonies(sheetId);
+          return { success: true, data: ceremonies };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          Logger.error('Failed to get ceremonies', error as Error);
+          return { success: false, error: errorMessage };
+        }
+
+      case 'DOWNLOAD_CEREMONY_FILE':
+        try {
+          const { fileId } = message.payload;
+          if (!fileId) {
+            throw new Error('File ID required');
+          }
+
+          // Import driveService dynamically to avoid circular imports
+          const { driveService } = await import('./service-worker');
+          const fileBlob = await driveService.downloadFile(fileId);
+          
+          return { success: true, data: fileBlob };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          Logger.error('Failed to download ceremony file', error as Error);
+          return { success: false, error: errorMessage };
+        }
+
+      case 'GET_PENDING_WHATSAPP_GUESTS_WITH_CEREMONIES':
+        try {
+          const { sheetId } = message.payload;
+          if (!sheetId) {
+            throw new Error('Sheet ID required');
+          }
+
+          const guests = await this.whatsappSheetsAPI.getPendingWhatsAppGuestsWithCeremonies(sheetId);
+          return { success: true, data: guests };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          Logger.error('Failed to get pending WhatsApp guests with ceremonies', error as Error);
+          return { success: false, error: errorMessage };
+        }
+
       default:
         throw new Error(`Unknown WhatsApp message type: ${message.type}`);
     }
@@ -495,7 +543,10 @@ export class MessageHandler {
       'GET_PENDING_WHATSAPP_GUESTS',
       'UPDATE_SHEET_STATUS', 
       'VALIDATE_WHATSAPP_SHEET',
-      'START_BULK_WHATSAPP_SEND'
+      'START_BULK_WHATSAPP_SEND',
+      'GET_CEREMONIES',
+      'DOWNLOAD_CEREMONY_FILE',
+      'GET_PENDING_WHATSAPP_GUESTS_WITH_CEREMONIES'
     ].includes(type);
   }
 

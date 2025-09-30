@@ -6,6 +6,7 @@
 import { Guest, SendProgress, SendResult, WhatsAppCoordinator, WhatsAppMessage } from '../shared/whatsapp-types';
 import { Logger } from '../shared/logger';
 import { messageHandler } from './service-worker';
+import { Ceremony } from '../popup/context/EventContext';
 
 class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
   private currentSendingProcess: {
@@ -14,6 +15,9 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
     results: SendResult[];
     whatsappTabId?: number;
   } | null = null;
+
+  // Add file cache for ceremony videos
+  private ceremonyFileCache: Map<string, Blob> = new Map();
 
   private readonly RETRY_ATTEMPTS = 1; // CHANGE THIS BACK!!!!!!!
   private readonly SEND_DELAY = 3000; // 3 seconds between messages
@@ -24,6 +28,9 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
   async startBulkSending(guests: Guest[]): Promise<void> {
     try {
       Logger.info(`Starting bulk WhatsApp sending for ${guests.length} guests`);
+
+      // Download and cache all unique ceremony files once
+      await this.downloadAndCacheFiles(guests);
 
       // Initialize sending process
       this.currentSendingProcess = {
@@ -110,6 +117,9 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
 
       throw error;
     } finally {
+      // Always clear cache after bulk operation
+      this.clearFileCache();
+      
       this.currentSendingProcess = null;
     }
   }
@@ -119,6 +129,8 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
    */
   async sendToSingleGuest(guest: Guest): Promise<SendResult> {
     const timestamp = Date.now();
+    let textSent = false;
+    let videosSent = true;
     
     try {
       Logger.info(`Attempting to send invitation to ${guest.fullName}`);
@@ -128,30 +140,57 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
         whatsappInviteLink: guest.whatsappInviteLink
       });
       
-      // Send message
+      // Send text message
       const messageResult = await this.sendMessageToWhatsAppTab('SEND_MESSAGE', {
         message: guest.invitationMessage
       });
       
-      Logger.info(`[WA DEBUG] Message send result: ${messageResult}`);
+      textSent = messageResult === true;
+      Logger.info(`[WA DEBUG] Text message sent: ${textSent}`);
       
-      // Only update sheets if message actually sent
-      if (messageResult === true) {
-        // Use the existing, properly initialized messageHandler
+      // Send ceremony videos if text was successful
+      if (textSent) {
+        const requiredVideos = this.getRequiredVideosForGuest(guest);
+        
+        if (requiredVideos.length > 0) {
+          Logger.info(`[WA DEBUG] Sending ${requiredVideos.length} videos to ${guest.fullName}`);
+          
+          videosSent = await this.sendMessageToWhatsAppTab('SEND_VIDEOS', {
+            videos: requiredVideos
+          });
+          
+          Logger.info(`[WA DEBUG] Videos sent: ${videosSent}`);
+        } else {
+          Logger.info(`[WA DEBUG] No ceremony videos required for ${guest.fullName}`);
+        }
+      }
+      
+      // Determine RSVP status based on success
+      let rsvpStatus: string;
+      if (textSent && videosSent) {
+        rsvpStatus = 'Invite Sent (WA)';
+      } else if (textSent && !videosSent) {
+        rsvpStatus = 'Needs FU'; // Text sent but videos failed
+      } else {
+        rsvpStatus = 'Needs Invite (WA)'; // Keep original if text failed
+      }
+      
+      // Update sheet status if text was sent
+      if (textSent) {
         try {
           const updateResult = await messageHandler.handleMessage(
             {
               type: 'UPDATE_SHEET_STATUS',
               payload: { 
                 rowNumber: guest.rowNumber, 
-                status: 'Invite Sent (WA)' 
+                status: rsvpStatus 
               }
             },
-            { id: 'whatsapp-coordinator' } // Add the required sender parameter
+            { id: 'whatsapp-coordinator' }
           );
           
           if (updateResult.success) {
-            Logger.info(`[WA DEBUG] Sheet status updated for ${guest.fullName}`);
+            Logger.info(`[WA DEBUG] RSVP status updated to: ${rsvpStatus}`);
           } else {
             Logger.error(`[WA DEBUG] Sheet update failed: ${updateResult.error}`);
           }
@@ -161,13 +200,14 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
       }
       
       // Wait before closing tab
-      await this.delay(3000);
+      await this.delay(2000);
       await this.closeWhatsAppTab();
       
       return {
-        success: messageResult === true,
+        success: textSent,
         guestName: guest.fullName,
         phoneNumber: guest.whatsappNumber,
+        videosSent,
         timestamp
       };
       
@@ -179,6 +219,7 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
         success: false,
         guestName: guest.fullName,
         phoneNumber: guest.whatsappNumber,
+        videosSent: false,
         error: (error as Error).message,
         timestamp
       };
@@ -214,6 +255,137 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
       this.currentSendingProcess.progress = progress;
       this.broadcastProgress();
     }
+  }
+
+  /**
+   * Download and cache unique ceremony files for bulk operation
+   */
+  private async downloadAndCacheFiles(guests: Guest[]): Promise<void> {
+    try {
+      Logger.info('[WA DEBUG] Starting ceremony file download and caching');
+      
+      // Get unique ceremony files needed
+      const uniqueCeremonies = new Set<string>();
+      guests.forEach(guest => {
+        Logger.info(`[WA DEBUG] Guest ${guest.fullName} has ceremonies: ${guest.pengajian}, ${guest.siraman}, ${guest.akadNikah}, ${guest.syukuran}`);
+
+        // Check for common ceremony properties
+        if (guest.pengajian) uniqueCeremonies.add('pengajian');
+        if (guest.siraman) uniqueCeremonies.add('siraman');
+        if (guest.akadNikah) uniqueCeremonies.add('akad-nikah');
+        if (guest.syukuran) uniqueCeremonies.add('syukuran');
+        
+        // Check for any other ceremony properties dynamically
+        Object.keys(guest).forEach(key => {
+          if (key !== 'rowNumber' && key !== 'fullName' && key !== 'whatsappNumber' && 
+              key !== 'invitationMessage' && key !== 'language' && key !== 'whatsappInviteLink' && 
+              key !== 'rsvpStatus' && guest[key] === true) {
+            uniqueCeremonies.add(key);
+          }
+        });
+      });
+
+      Logger.info(`[WA DEBUG] Unique ceremonies needed: ${Array.from(uniqueCeremonies).join(', ')}`);
+
+      // Get ceremony configuration from storage
+      const result = await chrome.storage.local.get(['eventCeremonies']);
+      const ceremonies: Array<Ceremony> = result.eventCeremonies || [];
+
+      Logger.info(`[WA DEBUG] Found ${ceremonies.length} configured ceremonies in storage`);
+
+      // Download each unique file
+      for (const ceremonyId of uniqueCeremonies) {
+        const ceremony = ceremonies.find(c => c.id === ceremonyId);
+        if (ceremony?.driveFileId && !this.ceremonyFileCache.has(ceremonyId)) {
+          try {
+            Logger.info(`[WA DEBUG] Downloading ceremony file: ${ceremony.name} (${ceremony.driveFileId})`);
+            
+            const downloadResult = await chrome.runtime.sendMessage({
+              type: 'DOWNLOAD_CEREMONY_FILE',
+              payload: { fileId: ceremony.driveFileId }
+            });
+            
+            if (downloadResult.success) {
+              this.ceremonyFileCache.set(ceremonyId, downloadResult.data);
+              Logger.info(`[WA DEBUG] Cached ceremony file: ${ceremony.name} (${downloadResult.data.size} bytes)`);
+            } else {
+              Logger.error(`[WA DEBUG] Failed to download ${ceremony.name}: ${downloadResult.error}`);
+            }
+          } catch (error) {
+            Logger.error(`[WA DEBUG] Error downloading ${ceremony.name}:`, error as Error);
+          }
+        } else if (!ceremony) {
+          Logger.warn(`[WA DEBUG] No ceremony configuration found for: ${ceremonyId}`);
+        } else if (this.ceremonyFileCache.has(ceremonyId)) {
+          Logger.info(`[WA DEBUG] Ceremony file already cached: ${ceremonyId}`);
+        }
+      }
+
+      Logger.info(`[WA DEBUG] File caching complete. Cached ${this.ceremonyFileCache.size} files`);
+    } catch (error) {
+      Logger.error('[WA DEBUG] Error in downloadAndCacheFiles:', error as Error);
+    }
+  }
+
+  /**
+   * Get required ceremony videos for a guest
+   */
+  private getRequiredVideosForGuest(guest: Guest): Array<{filename: string, blob: Blob}> {
+    const videos = [];
+    
+    // Check for common ceremony properties
+    if (guest.pengajian && this.ceremonyFileCache.has('pengajian')) {
+      videos.push({
+        filename: 'Pengajian_Invitation.mp4',
+        blob: this.ceremonyFileCache.get('pengajian')!
+      });
+    }
+    
+    if (guest.siraman && this.ceremonyFileCache.has('siraman')) {
+      videos.push({
+        filename: 'Siraman_Invitation.mp4', 
+        blob: this.ceremonyFileCache.get('siraman')!
+      });
+    }
+    
+    if (guest.akadNikah && this.ceremonyFileCache.has('akad-nikah')) {
+      videos.push({
+        filename: 'AkadNikah_Invitation.mp4',
+        blob: this.ceremonyFileCache.get('akad-nikah')!
+      });
+    }
+    
+    if (guest.syukuran && this.ceremonyFileCache.has('syukuran')) {
+      videos.push({
+        filename: 'Syukuran_Invitation.mp4',
+        blob: this.ceremonyFileCache.get('syukuran')!
+      });
+    }
+
+    // Check for any other ceremony properties dynamically
+    Object.keys(guest).forEach(key => {
+      if (key !== 'rowNumber' && key !== 'fullName' && key !== 'whatsappNumber' && 
+          key !== 'invitationMessage' && key !== 'language' && key !== 'whatsappInviteLink' && 
+          key !== 'rsvpStatus' && key !== 'pengajian' && key !== 'siraman' && 
+          key !== 'akadNikah' && key !== 'syukuran' && 
+          guest[key] === true && this.ceremonyFileCache.has(key)) {
+        videos.push({
+          filename: `${key.charAt(0).toUpperCase() + key.slice(1)}_Invitation.mp4`,
+          blob: this.ceremonyFileCache.get(key)!
+        });
+      }
+    });
+    
+    Logger.info(`[WA DEBUG] Guest ${guest.fullName} needs ${videos.length} videos`);
+    return videos;
+  }
+
+  /**
+   * Clear ceremony file cache
+   */
+  private clearFileCache(): void {
+    this.ceremonyFileCache.clear();
+    Logger.info('[WA DEBUG] Ceremony file cache cleared');
   }
 
   /**

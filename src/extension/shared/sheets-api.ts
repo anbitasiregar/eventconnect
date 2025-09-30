@@ -5,6 +5,8 @@
 
 import { Guest } from './whatsapp-types';
 import { Logger } from './logger';
+import { Ceremony } from '../popup/context/EventContext';
+import { GoogleDriveService } from '../background/google-drive-service';
 
 export interface WhatsAppSheetsConfig {
   guestSheetName: string;
@@ -56,6 +58,9 @@ export class WhatsAppSheetsAPI {
       const headers = guestData[0];
       const columnMap = this.mapColumns(headers);
 
+      Logger.info("Headers: " + JSON.stringify(headers));
+      Logger.info("Column map: " + JSON.stringify(columnMap));
+
       // Filter and parse guests
       const pendingGuests: Guest[] = [];
 
@@ -72,7 +77,13 @@ export class WhatsAppSheetsAPI {
             invitationMessage: row[columnMap.invitationMessage] || '',
             language: row[columnMap.language] || 'English',
             whatsappInviteLink: row[columnMap.whatsappInviteLink] || '',
-            rsvpStatus: rsvpStatus
+            rsvpStatus: rsvpStatus,
+            
+            // add ceremony attendance flags
+            pengajian: row[columnMap.pengajian] || false,
+            siraman: row[columnMap.siraman] || false,
+            akadNikah: row[columnMap.akadNikah] || false,
+            syukuran: row[columnMap.syukuran] || false
           };
 
           // Validate required fields
@@ -371,5 +382,178 @@ export class WhatsAppSheetsAPI {
     }
 
     return response.json();
+  }
+
+  /**
+   * Get ceremony information from Event Information tab
+   */
+  async getCeremonies(sheetId: string): Promise<Array<Ceremony>> {
+    try {
+      const token = await this.getAuthToken();
+      if (!token) {
+        throw new Error('No authentication token available');
+      }
+      
+      Logger.info(`[Sheets] Reading ceremony information from Event Information tab`);
+      
+      // Read Event Information tab headers (row 1)
+      const headerResponse = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent('Event Information!1:1')}`,
+        {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }
+      );
+      
+      if (!headerResponse.ok) {
+        throw new Error(`Failed to read ceremony headers: ${headerResponse.status}`);
+      }
+      
+      const headerData = await headerResponse.json();
+      const headers = headerData.values?.[0] || [];
+      
+      Logger.info(`[Sheets] Found headers: ${headers.join(', ')}`);
+      
+      // Filter out ceremony columns (exclude "ignore this column")
+      const ceremonyNames = headers.filter((header: string) => 
+        header && 
+        header !== 'ignore this column' && 
+        header.trim().length > 0
+      );
+      
+      Logger.info(`[Sheets] Ceremony names: ${ceremonyNames.join(', ')}`);
+      
+      // Read ceremony file links from Templates tab row 4
+      const linksResponse = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(this.config.templateSheetName + '!4:4')}`,
+        {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }
+      );
+      
+      if (!linksResponse.ok) {
+        throw new Error(`Failed to read ceremony links: ${linksResponse.status}`);
+      }
+      
+      const linksData = await linksResponse.json();
+      const links = linksData.values?.[0] || [];
+      
+      Logger.info(`[Sheets] Found ${links.length} links in templates row 4`);
+      
+      // Match ceremony names with their Drive links
+      const ceremonies: Array<Ceremony> = [];
+      for (let i = 0; i < ceremonyNames.length; i++) {
+        const ceremonyName = ceremonyNames[i];
+        const driveLink = links[i];
+        
+        if (driveLink && GoogleDriveService.isGoogleDriveUrl(driveLink)) {
+          const driveFileId = GoogleDriveService.extractFileId(driveLink);
+          if (driveFileId) {
+            ceremonies.push({
+              id: ceremonyName.toLowerCase().replace(/\s+/g, '-'),
+              name: ceremonyName,
+              driveFileId
+            });
+            Logger.info(`[Sheets] Added ceremony: ${ceremonyName} -> ${driveFileId}`);
+          } else {
+            Logger.warn(`[Sheets] Could not extract file ID from Drive link: ${driveLink}`);
+          }
+        } else if (driveLink) {
+          Logger.warn(`[Sheets] Invalid Drive link for ${ceremonyName}: ${driveLink}`);
+        }
+      }
+      
+      Logger.info(`[Sheets] Found ${ceremonies.length} ceremonies with Drive files`);
+      return ceremonies;
+      
+    } catch (error) {
+      Logger.error('[Sheets] Failed to get ceremonies', error as Error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get guests with ceremony attendance flags
+   */
+  async getPendingWhatsAppGuestsWithCeremonies(sheetId: string): Promise<Guest[]> {
+    try {
+      const token = await this.getAuthToken();
+      if (!token) {
+        throw new Error('No authentication token available');
+      }
+      
+      Logger.info(`[Sheets] Fetching guests with ceremony information from sheet: ${sheetId}`);
+      
+      // Read guest data
+      const guestData = await this.readRange(sheetId, `${this.config.guestSheetName}!A:Z`);
+      if (!guestData || guestData.length === 0) {
+        throw new Error('No guest data found');
+      }
+
+      const headers = guestData[0];
+      const columnMap = this.mapColumns(headers);
+      
+      // Also get ceremony headers from Event Information tab
+      const ceremonies = await this.getCeremonies(sheetId);
+      const ceremonyIds = ceremonies.map(c => c.id);
+      
+      Logger.info(`[Sheets] Processing guests with ceremonies: ${ceremonyIds.join(', ')}`);
+
+      const pendingGuests: Guest[] = [];
+
+      for (let i = 1; i < guestData.length; i++) {
+        const row = guestData[i];
+        const rsvpStatus = row[columnMap.rsvpStatus] || '';
+        
+        // Only include guests with "Needs Invite (WA)" status
+        if (rsvpStatus.trim() === 'Needs Invite (WA)') {
+          const guest: Guest = {
+            rowNumber: i + 1, // 1-based row number (including header)
+            fullName: row[columnMap.fullName] || '',
+            whatsappNumber: row[columnMap.whatsappNumber] || '',
+            invitationMessage: row[columnMap.invitationMessage] || '',
+            language: row[columnMap.language] || 'English',
+            whatsappInviteLink: row[columnMap.whatsappInviteLink] || '',
+            rsvpStatus: rsvpStatus
+          };
+
+          // Add ceremony attendance flags based on checkboxes in guest row
+          // Look for ceremony columns in the guest data
+          for (const ceremony of ceremonies) {
+            const ceremonyColumnIndex = headers.findIndex((header: string) => 
+              header.toLowerCase().includes(ceremony.name.toLowerCase())
+            );
+            
+            if (ceremonyColumnIndex !== -1) {
+              const ceremonyValue = row[ceremonyColumnIndex];
+              // Check for various checkbox indicators
+              const isAttending = ceremonyValue === 'TRUE' || 
+                                ceremonyValue === 'Yes' || 
+                                ceremonyValue === '1' || 
+                                ceremonyValue === true;
+              
+              guest[ceremony.id] = isAttending;
+              
+              if (isAttending) {
+                Logger.info(`[Sheets] Guest ${guest.fullName} attending ${ceremony.name}`);
+              }
+            }
+          }
+
+          // Validate required fields
+          if (guest.fullName && guest.whatsappInviteLink) {
+            pendingGuests.push(guest);
+          } else {
+            Logger.warn(`[Sheets] Skipping incomplete guest data at row ${i + 1} - missing required fields`);
+          }
+        }
+      }
+
+      Logger.info(`[Sheets] Found ${pendingGuests.length} pending WhatsApp guests with ceremony data`);
+      return pendingGuests;
+
+    } catch (error) {
+      Logger.error('[Sheets] Failed to get pending WhatsApp guests with ceremonies', error as Error);
+      throw new Error(`Failed to fetch guests: ${(error as Error).message}`);
+    }
   }
 }

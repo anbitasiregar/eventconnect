@@ -1,13 +1,21 @@
 import React, { createContext, useContext } from 'react';
 import { useEventData } from '../hooks/useEventData';
 
+// Ceremony interface for video invitations
+export interface Ceremony {
+  id: string;
+  name: string; // "Pengajian", "Siraman", etc.
+  driveFileId: string; // Extracted from Drive link
+}
+
 // Simplified Event interface for extension use
-interface Event {
+export interface Event {
   id: string;
   name: string;
   date: string;
   sheetsId: string;
   status: 'planning' | 'in_progress' | 'completed' | 'cancelled';
+  ceremonies?: Array<Ceremony>; // Dynamic based on sheet columns
 }
 
 interface TaskItem {
