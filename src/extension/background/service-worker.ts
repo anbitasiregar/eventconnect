@@ -8,6 +8,7 @@ import { ApiClient } from './api-client';
 import { GoogleSheetsService } from './sheets-service';
 import { GoogleDriveService } from './google-drive-service';
 import { MessageHandler } from './message-handler';
+import { CeremonyStorage } from './ceremony-storage';
 import { config, validateConfig } from './config';
 import { Logger, initializeLogger } from '../shared/logger';
 import { setStorageItem, getStorageItem } from '../shared/storage';
@@ -19,6 +20,7 @@ let apiClient: ApiClient;
 let sheetsService: GoogleSheetsService;
 let driveService: GoogleDriveService;
 let messageHandler: MessageHandler;
+let ceremonyStorage: CeremonyStorage;
 
 // Service worker installation
 chrome.runtime.onInstalled.addListener(async (details) => {
@@ -121,6 +123,10 @@ async function initializeServices(): Promise<void> {
       }
       return token;
     });
+    
+    // Initialize ceremony storage
+    ceremonyStorage = new CeremonyStorage();
+    Logger.info('Ceremony storage initialized');
     
     // Initialize message handler
     messageHandler = new MessageHandler(authService, apiClient, sheetsService);
@@ -262,3 +268,6 @@ export { driveService };
 
 // Export message handler for WhatsApp coordinator
 export { messageHandler };
+
+// Export ceremony storage
+export { ceremonyStorage };

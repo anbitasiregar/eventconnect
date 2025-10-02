@@ -490,23 +490,6 @@ export class MessageHandler {
           return { success: false, error: errorMessage };
         }
 
-      case 'DOWNLOAD_CEREMONY_FILE':
-        try {
-          const { fileId } = message.payload;
-          if (!fileId) {
-            throw new Error('File ID required');
-          }
-
-          // Import driveService dynamically to avoid circular imports
-          const { driveService } = await import('./service-worker');
-          const fileBlob = await driveService.downloadFile(fileId);
-          
-          return { success: true, data: fileBlob };
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          Logger.error('Failed to download ceremony file', error as Error);
-          return { success: false, error: errorMessage };
-        }
 
       case 'GET_PENDING_WHATSAPP_GUESTS_WITH_CEREMONIES':
         try {

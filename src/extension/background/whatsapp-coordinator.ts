@@ -6,6 +6,8 @@
 import { Guest, SendProgress, SendResult, WhatsAppCoordinator, WhatsAppMessage } from '../shared/whatsapp-types';
 import { Logger } from '../shared/logger';
 import { messageHandler } from './service-worker';
+import { ceremonyStorage } from './service-worker';
+import { driveService } from './service-worker';
 import { Ceremony } from '../popup/context/EventContext';
 
 class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
@@ -16,8 +18,6 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
     whatsappTabId?: number;
   } | null = null;
 
-  // Add file cache for ceremony videos
-  private ceremonyFileCache: Map<string, Blob> = new Map();
 
   private readonly RETRY_ATTEMPTS = 1; // CHANGE THIS BACK!!!!!!!
   private readonly SEND_DELAY = 3000; // 3 seconds between messages
@@ -29,8 +29,9 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
     try {
       Logger.info(`Starting bulk WhatsApp sending for ${guests.length} guests`);
 
-      // Download and cache all unique ceremony files once
-      await this.downloadAndCacheFiles(guests);
+      // Download and store all unique ceremony files once
+      await this.downloadAndStoreCeremonies(guests);
+
 
       // Initialize sending process
       this.currentSendingProcess = {
@@ -117,8 +118,13 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
 
       throw error;
     } finally {
-      // Always clear cache after bulk operation
-      this.clearFileCache();
+      // Clear IndexedDB after bulk operation completes
+      try {
+        await ceremonyStorage.clearAll();
+        Logger.info('[CEREMONY CACHE] Cleared all ceremony videos from storage');
+      } catch (error) {
+        Logger.error('[CEREMONY CACHE] Failed to clear storage:', error as Error);
+      }
       
       this.currentSendingProcess = null;
     }
@@ -159,7 +165,7 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
       
       // Send ceremony videos if text was successful
       if (textSent) {
-        const requiredVideos = this.getRequiredVideosForGuest(guest);
+        const requiredVideos = await this.getRequiredVideosForGuest(guest);
         
         if (requiredVideos.length > 0) {
           Logger.info(`[WA DEBUG] Preparing to send ${requiredVideos.length} videos`);
@@ -267,164 +273,117 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
   }
 
   /**
-   * Download and cache unique ceremony files for bulk operation
+   * Download and store unique ceremony files in IndexedDB
+   * This survives service worker restarts during long operations
    */
-  private async downloadAndCacheFiles(guests: Guest[]): Promise<void> {
-    Logger.info(`[WA DEBUG] Starting ceremony file download and caching`);
+  private async downloadAndStoreCeremonies(guests: Guest[]): Promise<void> {
+    Logger.info(`[CEREMONY CACHE] Starting ceremony file download and storage`);
     
-    // Log each guest's ceremony flags
-    guests.forEach(guest => {
-      Logger.info(`[WA DEBUG] Guest ${guest.fullName} has ceremonies: pengajian=${guest.pengajian}, siraman=${guest.siraman}, akadNikah=${guest.akadNikah}, syukuran=${guest.syukuran}`);
-    });
-    
-    // Get unique ceremony IDs needed - USE EXACT PROPERTY NAMES FROM GUEST
+    // Get unique ceremony IDs needed
     const uniqueCeremonies = new Set<string>();
     guests.forEach(guest => {
-      if (guest.pengajian) {
-        uniqueCeremonies.add('pengajian');
-        Logger.info(`[WA DEBUG] ${guest.fullName} needs Pengajian video`);
-      }
-      if (guest.siraman) {
-        uniqueCeremonies.add('siraman');
-        Logger.info(`[WA DEBUG] ${guest.fullName} needs Siraman video`);
-      }
-      if (guest.akadNikah) {
-        uniqueCeremonies.add('akadNikah');  // ← USE CAMELCASE
-        Logger.info(`[WA DEBUG] ${guest.fullName} needs Akad Nikah video`);
-      }
-      if (guest.syukuran) {
-        uniqueCeremonies.add('syukuran');
-        Logger.info(`[WA DEBUG] ${guest.fullName} needs Syukuran video`);
-      }
+      if (guest.pengajian) uniqueCeremonies.add('pengajian');
+      if (guest.siraman) uniqueCeremonies.add('siraman');
+      if (guest.akadNikah) uniqueCeremonies.add('akadNikah');
+      if (guest.syukuran) uniqueCeremonies.add('syukuran');
     });
 
-    Logger.info(`[WA DEBUG] Unique ceremonies needed: ${Array.from(uniqueCeremonies).join(', ')}`);
+    Logger.info(`[CEREMONY CACHE] Unique ceremonies needed: ${Array.from(uniqueCeremonies).join(', ')}`);
 
     // Get ceremony configuration from storage
     const result = await chrome.storage.local.get(['eventCeremonies']);
     const ceremonies: Array<Ceremony> = result.eventCeremonies || [];
     
     if (ceremonies.length === 0) {
-      Logger.error('[WA DEBUG] No ceremony configuration found in storage! Run onboarding again.');
+      Logger.error('[CEREMONY CACHE] No ceremony configuration found! Run ceremony setup first.');
       return;
     }
     
-    Logger.info(`[WA DEBUG] Found ${ceremonies.length} configured ceremonies in storage`);
-    ceremonies.forEach(ceremony => {
-      Logger.info(`[WA DEBUG] Configured ceremony: ${ceremony.name} (${ceremony.id}) - Drive ID: ${ceremony.driveFileId}`);
-    });
+    Logger.info(`[CEREMONY CACHE] Found ${ceremonies.length} configured ceremonies`);
 
-    // Download each unique file
+    // Download and store each unique ceremony
+    let downloadCount = 0;
+    let skipCount = 0;
+    
     for (const ceremonyId of uniqueCeremonies) {
+      // Check if already in IndexedDB
+      const exists = await ceremonyStorage.hasVideo(ceremonyId);
+      if (exists) {
+        Logger.info(`[CEREMONY CACHE] ${ceremonyId} already in storage, skipping download`);
+        skipCount++;
+        continue;
+      }
+      
       const ceremony = ceremonies.find(c => c.id === ceremonyId);
       
-      Logger.info(`[WA DEBUG] Looking for ceremony ID: "${ceremonyId}"...`);
-      
       if (!ceremony) {
-        Logger.error(`[WA DEBUG] Ceremony "${ceremonyId}" not found in configuration!`);
-        Logger.error(`[WA DEBUG] Available ceremony IDs: ${ceremonies.map(c => c.id).join(', ')}`);
+        Logger.error(`[CEREMONY CACHE] Ceremony "${ceremonyId}" not found in configuration`);
         continue;
       }
       
       if (!ceremony.driveFileId) {
-        Logger.error(`[WA DEBUG] Ceremony ${ceremony.name} has no Drive file ID!`);
-        continue;
-      }
-      
-      if (this.ceremonyFileCache.has(ceremonyId)) {
-        Logger.info(`[WA DEBUG] Ceremony ${ceremony.name} already cached`);
+        Logger.error(`[CEREMONY CACHE] Ceremony ${ceremony.name} has no Drive file ID`);
         continue;
       }
       
       try {
-        Logger.info(`[WA DEBUG] Downloading ceremony file: ${ceremony.name} (Drive ID: ${ceremony.driveFileId})`);
+        Logger.info(`[CEREMONY CACHE] Downloading: ${ceremony.name} (Drive ID: ${ceremony.driveFileId})`);
         
-        const downloadResult = await chrome.runtime.sendMessage({
-          type: 'DOWNLOAD_CEREMONY_FILE',
-          payload: { fileId: ceremony.driveFileId }
-        });
+        // Download directly from Drive service
+        const blob = await driveService.downloadFile(ceremony.driveFileId);
         
-        if (downloadResult.success) {
-          this.ceremonyFileCache.set(ceremonyId, downloadResult.data);
-          Logger.info(`[WA DEBUG] Successfully cached ceremony file: ${ceremony.name} (${downloadResult.data.size} bytes)`);
-        } else {
-          Logger.error(`[WA DEBUG] Failed to download ${ceremony.name}: ${downloadResult.error}`);
-        }
+        // Store in IndexedDB
+        await ceremonyStorage.storeVideo(ceremonyId, blob);
+        
+        Logger.info(`[CEREMONY CACHE] ✓ Stored ${ceremony.name} (${blob.size} bytes)`);
+        downloadCount++;
+        
       } catch (error) {
-        Logger.error(`[WA DEBUG] Error downloading ${ceremony.name}:`, error as Error);
+        Logger.error(`[CEREMONY CACHE] Failed to download/store ${ceremony.name}:`, error as Error);
       }
     }
     
-    Logger.info(`[WA DEBUG] File caching complete. Cached ${this.ceremonyFileCache.size} files`);
-    Logger.info(`[WA DEBUG] Cached ceremony IDs: ${Array.from(this.ceremonyFileCache.keys()).join(', ')}`);
+    Logger.info(`[CEREMONY CACHE] Download complete: ${downloadCount} new, ${skipCount} cached`);
   }
 
   /**
-   * Get required ceremony videos for a guest
+   * Get required ceremony videos for a guest from IndexedDB
    */
-  private getRequiredVideosForGuest(guest: Guest): Array<{filename: string, blob: Blob}> {
-    const videos = [];
+  private async getRequiredVideosForGuest(guest: Guest): Promise<Array<{filename: string, blob: Blob}>> {
+    const videos: Array<{filename: string, blob: Blob}> = [];
     
-    Logger.info(`[WA DEBUG] Getting videos for ${guest.fullName}`);
-    Logger.info(`[WA DEBUG] Guest ceremonies - P:${guest.pengajian}, S:${guest.siraman}, A:${guest.akadNikah}, Sy:${guest.syukuran}`);
-    Logger.info(`[WA DEBUG] Cache has: ${Array.from(this.ceremonyFileCache.keys()).join(', ')}`);
+    Logger.info(`[CEREMONY CACHE] Getting videos for ${guest.fullName}`);
     
-    // Check for common ceremony properties - USE CONSISTENT IDs
-    if (guest.pengajian && this.ceremonyFileCache.has('pengajian')) {
-      const blob = this.ceremonyFileCache.get('pengajian')!;
-      videos.push({
-        filename: 'Pengajian_Invitation.mp4',
-        blob: blob
-      });
-      Logger.info(`[WA DEBUG] Added Pengajian video (${blob.size} bytes)`);
-    } else if (guest.pengajian) {
-      Logger.error(`[WA DEBUG] Guest needs Pengajian but file not in cache!`);
+    // Define ceremony mappings
+    const ceremonyMappings = [
+      { flag: guest.pengajian, id: 'pengajian', filename: 'Pengajian_Invitation.mp4' },
+      { flag: guest.siraman, id: 'siraman', filename: 'Siraman_Invitation.mp4' },
+      { flag: guest.akadNikah, id: 'akadNikah', filename: 'AkadNikah_Invitation.mp4' },
+      { flag: guest.syukuran, id: 'syukuran', filename: 'Syukuran_Invitation.mp4' }
+    ];
+    
+    for (const ceremony of ceremonyMappings) {
+      if (ceremony.flag) {
+        try {
+          const blob = await ceremonyStorage.getVideo(ceremony.id);
+          
+          if (blob) {
+            videos.push({ filename: ceremony.filename, blob });
+            Logger.info(`[CEREMONY CACHE] ✓ Retrieved ${ceremony.id} (${blob.size} bytes)`);
+          } else {
+            Logger.error(`[CEREMONY CACHE] Guest needs ${ceremony.id} but not found in storage!`);
+          }
+        } catch (error) {
+          Logger.error(`[CEREMONY CACHE] Error retrieving ${ceremony.id}:`, error as Error);
+        }
+      }
     }
     
-    if (guest.siraman && this.ceremonyFileCache.has('siraman')) {
-      const blob = this.ceremonyFileCache.get('siraman')!;
-      videos.push({
-        filename: 'Siraman_Invitation.mp4', 
-        blob: blob
-      });
-      Logger.info(`[WA DEBUG] Added Siraman video (${blob.size} bytes)`);
-    } else if (guest.siraman) {
-      Logger.error(`[WA DEBUG] Guest needs Siraman but file not in cache!`);
-    }
-    
-    if (guest.akadNikah && this.ceremonyFileCache.has('akadNikah')) {  // ← USE CAMELCASE
-      const blob = this.ceremonyFileCache.get('akadNikah')!;
-      videos.push({
-        filename: 'AkadNikah_Invitation.mp4',
-        blob: blob
-      });
-      Logger.info(`[WA DEBUG] Added Akad Nikah video (${blob.size} bytes)`);
-    } else if (guest.akadNikah) {
-      Logger.error(`[WA DEBUG] Guest needs Akad Nikah but file not in cache!`);
-    }
-    
-    if (guest.syukuran && this.ceremonyFileCache.has('syukuran')) {
-      const blob = this.ceremonyFileCache.get('syukuran')!;
-      videos.push({
-        filename: 'Syukuran_Invitation.mp4',
-        blob: blob
-      });
-      Logger.info(`[WA DEBUG] Added Syukuran video (${blob.size} bytes)`);
-    } else if (guest.syukuran) {
-      Logger.error(`[WA DEBUG] Guest needs Syukuran but file not in cache!`);
-    }
-    
-    Logger.info(`[WA DEBUG] Guest ${guest.fullName} needs ${videos.length} videos`);
+    Logger.info(`[CEREMONY CACHE] Prepared ${videos.length} videos for ${guest.fullName}`);
     return videos;
   }
 
-  /**
-   * Clear ceremony file cache
-   */
-  private clearFileCache(): void {
-    this.ceremonyFileCache.clear();
-    Logger.info('[WA DEBUG] Ceremony file cache cleared');
-  }
+
 
   /**
    * Send message to WhatsApp Web content script
