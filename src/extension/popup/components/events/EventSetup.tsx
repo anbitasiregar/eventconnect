@@ -22,6 +22,38 @@ export const EventSetup: React.FC<EventSetupProps> = ({ onEventConnected, onCanc
     return input.trim();
   };
 
+  const setupEventCeremonies = async (sheetId: string): Promise<boolean> => {
+    try {
+      console.log('[ONBOARDING] Setting up event ceremonies...');
+      
+      const response = await chrome.runtime.sendMessage({
+        type: 'GET_CEREMONIES',
+        payload: { sheetId }
+      });
+      
+      if (response.success) {
+        // Save ceremonies to storage
+        await chrome.storage.local.set({ 
+          eventCeremonies: response.data 
+        });
+        
+        console.log(`[ONBOARDING] Successfully configured ${response.data.length} ceremonies`);
+        response.data.forEach((ceremony: any) => {
+          console.log(`[ONBOARDING] - ${ceremony.name} (${ceremony.id}): ${ceremony.driveFileId}`);
+        });
+        
+        return true;
+      } else {
+        throw new Error(response.error || 'Failed to get ceremonies');
+      }
+    } catch (error) {
+      console.error('[ONBOARDING] Failed to setup ceremonies:', error);
+      // Don't block onboarding if ceremony setup fails
+      // User can still send text messages
+      return false;
+    }
+  };
+
   const connectSheet = async () => {
     const cleanSheetId = extractSheetId(sheetId);
     
@@ -42,6 +74,7 @@ export const EventSetup: React.FC<EventSetupProps> = ({ onEventConnected, onCanc
       });
 
       if (response.success) {
+        // Save sheet ID
         await chrome.runtime.sendMessage({
           type: 'SET_CURRENT_EVENT',
           payload: { eventId: cleanSheetId }
@@ -49,6 +82,9 @@ export const EventSetup: React.FC<EventSetupProps> = ({ onEventConnected, onCanc
         
         console.log('Event dashboard connected successfully');
         console.log('Sheet structure:', response.structure);
+        
+        // Setup ceremonies after successful sheet validation
+        await setupEventCeremonies(cleanSheetId);
         
         onEventConnected(cleanSheetId, response.eventName || 'Event Dashboard');
       } else {

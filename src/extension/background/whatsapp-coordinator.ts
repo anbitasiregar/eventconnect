@@ -270,73 +270,93 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
    * Download and cache unique ceremony files for bulk operation
    */
   private async downloadAndCacheFiles(guests: Guest[]): Promise<void> {
-    try {
-      Logger.info('[WA DEBUG] Starting ceremony file download and caching');
-      
-      // Get unique ceremony files needed
-      const uniqueCeremonies = new Set<string>();
-      guests.forEach(guest => {
-        Logger.info(`[WA DEBUG] Guest ${guest.fullName} has ceremonies: ${guest.pengajian}, ${guest.siraman}, ${guest.akadNikah}, ${guest.syukuran}`);
-
-        // Check for common ceremony properties
-        if (guest.pengajian) uniqueCeremonies.add('pengajian');
-        if (guest.siraman) uniqueCeremonies.add('siraman');
-        if (guest.akadNikah) uniqueCeremonies.add('akad-nikah');
-        if (guest.syukuran) uniqueCeremonies.add('syukuran');
-        
-        // Check for any other ceremony properties dynamically
-        Object.keys(guest).forEach(key => {
-          if (key !== 'rowNumber' && key !== 'fullName' && key !== 'whatsappNumber' && 
-              key !== 'invitationMessage' && key !== 'language' && key !== 'whatsappInviteLink' && 
-              key !== 'rsvpStatus' && guest[key] === true) {
-            uniqueCeremonies.add(key);
-          }
-        });
-      });
-
-      Logger.info(`[WA DEBUG] Unique ceremonies needed: ${Array.from(uniqueCeremonies).join(', ')}`);
-
-      // Get ceremony configuration from storage
-      const result = await chrome.storage.local.get(['eventCeremonies']);
-      const ceremonies: Array<Ceremony> = result.eventCeremonies || [];
-
-      Logger.info(`[WA DEBUG] Found ${ceremonies.length} configured ceremonies in storage`);
-      ceremonies.forEach(ceremony => {
-        Logger.info(`[WA DEBUG] Configured ceremony: ${ceremony.name} (${ceremony.id}) - Drive ID: ${ceremony.driveFileId}`);
-      });
-
-      // Download each unique file
-      for (const ceremonyId of uniqueCeremonies) {
-        const ceremony = ceremonies.find(c => c.id === ceremonyId);
-        if (ceremony?.driveFileId && !this.ceremonyFileCache.has(ceremonyId)) {
-          try {
-            Logger.info(`[WA DEBUG] Downloading ceremony file: ${ceremony.name} (${ceremony.driveFileId})`);
-            
-            const downloadResult = await chrome.runtime.sendMessage({
-              type: 'DOWNLOAD_CEREMONY_FILE',
-              payload: { fileId: ceremony.driveFileId }
-            });
-            
-            if (downloadResult.success) {
-              this.ceremonyFileCache.set(ceremonyId, downloadResult.data);
-              Logger.info(`[WA DEBUG] Cached ceremony file: ${ceremony.name} (${downloadResult.data.size} bytes)`);
-            } else {
-              Logger.error(`[WA DEBUG] Failed to download ${ceremony.name}: ${downloadResult.error}`);
-            }
-          } catch (error) {
-            Logger.error(`[WA DEBUG] Error downloading ${ceremony.name}:`, error as Error);
-          }
-        } else if (!ceremony) {
-          Logger.warn(`[WA DEBUG] No ceremony configuration found for: ${ceremonyId}`);
-        } else if (this.ceremonyFileCache.has(ceremonyId)) {
-          Logger.info(`[WA DEBUG] Ceremony file already cached: ${ceremonyId}`);
-        }
+    Logger.info(`[WA DEBUG] Starting ceremony file download and caching`);
+    
+    // Log each guest's ceremony flags
+    guests.forEach(guest => {
+      Logger.info(`[WA DEBUG] Guest ${guest.fullName} has ceremonies: pengajian=${guest.pengajian}, siraman=${guest.siraman}, akadNikah=${guest.akadNikah}, syukuran=${guest.syukuran}`);
+    });
+    
+    // Get unique ceremony IDs needed - USE EXACT PROPERTY NAMES FROM GUEST
+    const uniqueCeremonies = new Set<string>();
+    guests.forEach(guest => {
+      if (guest.pengajian) {
+        uniqueCeremonies.add('pengajian');
+        Logger.info(`[WA DEBUG] ${guest.fullName} needs Pengajian video`);
       }
+      if (guest.siraman) {
+        uniqueCeremonies.add('siraman');
+        Logger.info(`[WA DEBUG] ${guest.fullName} needs Siraman video`);
+      }
+      if (guest.akadNikah) {
+        uniqueCeremonies.add('akadNikah');  // ← USE CAMELCASE
+        Logger.info(`[WA DEBUG] ${guest.fullName} needs Akad Nikah video`);
+      }
+      if (guest.syukuran) {
+        uniqueCeremonies.add('syukuran');
+        Logger.info(`[WA DEBUG] ${guest.fullName} needs Syukuran video`);
+      }
+    });
 
-      Logger.info(`[WA DEBUG] File caching complete. Cached ${this.ceremonyFileCache.size} files`);
-    } catch (error) {
-      Logger.error('[WA DEBUG] Error in downloadAndCacheFiles:', error as Error);
+    Logger.info(`[WA DEBUG] Unique ceremonies needed: ${Array.from(uniqueCeremonies).join(', ')}`);
+
+    // Get ceremony configuration from storage
+    const result = await chrome.storage.local.get(['eventCeremonies']);
+    const ceremonies: Array<Ceremony> = result.eventCeremonies || [];
+    
+    if (ceremonies.length === 0) {
+      Logger.error('[WA DEBUG] No ceremony configuration found in storage! Run onboarding again.');
+      return;
     }
+    
+    Logger.info(`[WA DEBUG] Found ${ceremonies.length} configured ceremonies in storage`);
+    ceremonies.forEach(ceremony => {
+      Logger.info(`[WA DEBUG] Configured ceremony: ${ceremony.name} (${ceremony.id}) - Drive ID: ${ceremony.driveFileId}`);
+    });
+
+    // Download each unique file
+    for (const ceremonyId of uniqueCeremonies) {
+      const ceremony = ceremonies.find(c => c.id === ceremonyId);
+      
+      Logger.info(`[WA DEBUG] Looking for ceremony ID: "${ceremonyId}"...`);
+      
+      if (!ceremony) {
+        Logger.error(`[WA DEBUG] Ceremony "${ceremonyId}" not found in configuration!`);
+        Logger.error(`[WA DEBUG] Available ceremony IDs: ${ceremonies.map(c => c.id).join(', ')}`);
+        continue;
+      }
+      
+      if (!ceremony.driveFileId) {
+        Logger.error(`[WA DEBUG] Ceremony ${ceremony.name} has no Drive file ID!`);
+        continue;
+      }
+      
+      if (this.ceremonyFileCache.has(ceremonyId)) {
+        Logger.info(`[WA DEBUG] Ceremony ${ceremony.name} already cached`);
+        continue;
+      }
+      
+      try {
+        Logger.info(`[WA DEBUG] Downloading ceremony file: ${ceremony.name} (Drive ID: ${ceremony.driveFileId})`);
+        
+        const downloadResult = await chrome.runtime.sendMessage({
+          type: 'DOWNLOAD_CEREMONY_FILE',
+          payload: { fileId: ceremony.driveFileId }
+        });
+        
+        if (downloadResult.success) {
+          this.ceremonyFileCache.set(ceremonyId, downloadResult.data);
+          Logger.info(`[WA DEBUG] Successfully cached ceremony file: ${ceremony.name} (${downloadResult.data.size} bytes)`);
+        } else {
+          Logger.error(`[WA DEBUG] Failed to download ${ceremony.name}: ${downloadResult.error}`);
+        }
+      } catch (error) {
+        Logger.error(`[WA DEBUG] Error downloading ${ceremony.name}:`, error as Error);
+      }
+    }
+    
+    Logger.info(`[WA DEBUG] File caching complete. Cached ${this.ceremonyFileCache.size} files`);
+    Logger.info(`[WA DEBUG] Cached ceremony IDs: ${Array.from(this.ceremonyFileCache.keys()).join(', ')}`);
   }
 
   /**
@@ -349,7 +369,7 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
     Logger.info(`[WA DEBUG] Guest ceremonies - P:${guest.pengajian}, S:${guest.siraman}, A:${guest.akadNikah}, Sy:${guest.syukuran}`);
     Logger.info(`[WA DEBUG] Cache has: ${Array.from(this.ceremonyFileCache.keys()).join(', ')}`);
     
-    // Check for common ceremony properties
+    // Check for common ceremony properties - USE CONSISTENT IDs
     if (guest.pengajian && this.ceremonyFileCache.has('pengajian')) {
       const blob = this.ceremonyFileCache.get('pengajian')!;
       videos.push({
@@ -372,8 +392,8 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
       Logger.error(`[WA DEBUG] Guest needs Siraman but file not in cache!`);
     }
     
-    if (guest.akadNikah && this.ceremonyFileCache.has('akad-nikah')) {
-      const blob = this.ceremonyFileCache.get('akad-nikah')!;
+    if (guest.akadNikah && this.ceremonyFileCache.has('akadNikah')) {  // ← USE CAMELCASE
+      const blob = this.ceremonyFileCache.get('akadNikah')!;
       videos.push({
         filename: 'AkadNikah_Invitation.mp4',
         blob: blob
@@ -393,22 +413,6 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
     } else if (guest.syukuran) {
       Logger.error(`[WA DEBUG] Guest needs Syukuran but file not in cache!`);
     }
-
-    // Check for any other ceremony properties dynamically
-    Object.keys(guest).forEach(key => {
-      if (key !== 'rowNumber' && key !== 'fullName' && key !== 'whatsappNumber' && 
-          key !== 'invitationMessage' && key !== 'language' && key !== 'whatsappInviteLink' && 
-          key !== 'rsvpStatus' && key !== 'pengajian' && key !== 'siraman' && 
-          key !== 'akadNikah' && key !== 'syukuran' && 
-          guest[key] === true && this.ceremonyFileCache.has(key)) {
-        const blob = this.ceremonyFileCache.get(key)!;
-        videos.push({
-          filename: `${key.charAt(0).toUpperCase() + key.slice(1)}_Invitation.mp4`,
-          blob: blob
-        });
-        Logger.info(`[WA DEBUG] Added ${key} video (${blob.size} bytes)`);
-      }
-    });
     
     Logger.info(`[WA DEBUG] Guest ${guest.fullName} needs ${videos.length} videos`);
     return videos;

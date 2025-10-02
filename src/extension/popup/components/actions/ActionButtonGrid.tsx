@@ -3,6 +3,7 @@ import { EventStatusButton } from './EventStatusButton';
 import { QuickUpdateButton } from './QuickUpdateButton';
 import { NextTasksButton } from './NextTasksButton';
 import { WhatsAppSenderButton } from './WhatsAppSenderButton';
+import { CeremonyRefreshButton } from './CeremonyRefreshButton';
 
 export const ActionButtonGrid: React.FC = () => {
   return (
@@ -11,6 +12,7 @@ export const ActionButtonGrid: React.FC = () => {
       <EventStatusButton />
       <QuickUpdateButton />
       <NextTasksButton />
+      <CeremonyRefreshButton />
     </div>
   );
 };

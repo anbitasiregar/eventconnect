@@ -422,90 +422,122 @@ export class WhatsAppSheetsAPI {
   }
 
   /**
-   * Get ceremony information from Event Information tab
+   * Get ceremony information from [JAKARTA] Invitation Message Templates tab
    */
   async getCeremonies(sheetId: string): Promise<Array<Ceremony>> {
-    try {
-      const token = await this.getAuthToken();
-      if (!token) {
-        throw new Error('No authentication token available');
+    const token = await this.getAuthToken();
+    
+    Logger.info('[DEBUG] Getting ceremony information from Templates tab');
+    
+    // Read the entire Templates tab to find headers and links
+    const response = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent('[JAKARTA] Invitation Message Templates!A1:Z10')}`,
+      {
+        headers: { 'Authorization': `Bearer ${token}` }
       }
-      
-      Logger.info(`[Sheets] Reading ceremony information from Event Information tab`);
-      
-      // Read Event Information tab headers (row 1)
-      const headerResponse = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent('Event Information!1:1')}`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
-      
-      if (!headerResponse.ok) {
-        throw new Error(`Failed to read ceremony headers: ${headerResponse.status}`);
-      }
-      
-      const headerData = await headerResponse.json();
-      const headers = headerData.values?.[0] || [];
-      
-      Logger.info(`[Sheets] Found headers: ${headers.join(', ')}`);
-      
-      // Filter out ceremony columns (exclude "ignore this column")
-      const ceremonyNames = headers.filter((header: string) => 
-        header && 
-        header !== 'ignore this column' && 
-        header.trim().length > 0
-      );
-      
-      Logger.info(`[Sheets] Ceremony names: ${ceremonyNames.join(', ')}`);
-      
-      // Read ceremony file links from Templates tab row 4
-      const linksResponse = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(this.config.templateSheetName + '!4:4')}`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
-      
-      if (!linksResponse.ok) {
-        throw new Error(`Failed to read ceremony links: ${linksResponse.status}`);
-      }
-      
-      const linksData = await linksResponse.json();
-      const links = linksData.values?.[0] || [];
-      
-      Logger.info(`[Sheets] Found ${links.length} links in templates row 4`);
-      
-      // Match ceremony names with their Drive links
-      const ceremonies: Array<Ceremony> = [];
-      for (let i = 0; i < ceremonyNames.length; i++) {
-        const ceremonyName = ceremonyNames[i];
-        const driveLink = links[i];
-        
-        if (driveLink && GoogleDriveService.isGoogleDriveUrl(driveLink)) {
-          const driveFileId = GoogleDriveService.extractFileId(driveLink);
-          if (driveFileId) {
-            ceremonies.push({
-              id: ceremonyName.toLowerCase().replace(/\s+/g, '-'),
-              name: ceremonyName,
-              driveFileId
-            });
-            Logger.info(`[Sheets] Added ceremony: ${ceremonyName} -> ${driveFileId}`);
-          } else {
-            Logger.warn(`[Sheets] Could not extract file ID from Drive link: ${driveLink}`);
-          }
-        } else if (driveLink) {
-          Logger.warn(`[Sheets] Invalid Drive link for ${ceremonyName}: ${driveLink}`);
-        }
-      }
-      
-      Logger.info(`[Sheets] Found ${ceremonies.length} ceremonies with Drive files`);
-      return ceremonies;
-      
-    } catch (error) {
-      Logger.error('[Sheets] Failed to get ceremonies', error as Error);
-      throw error;
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Failed to read ceremony info: ${response.status}`);
     }
+    
+    const data = await response.json();
+    const rows = data.values || [];
+    
+    Logger.info(`[DEBUG] Templates tab has ${rows.length} rows`);
+    
+    if (rows.length === 0) {
+      Logger.warn('[DEBUG] Templates tab is empty');
+      return [];
+    }
+    
+    // Row 1 contains headers
+    const headers = rows[0] || [];
+    Logger.info(`[DEBUG] Headers from row 1: ${JSON.stringify(headers)}`);
+    
+    // Find the row that contains "Invitation Link" in column A
+    let linkRowIndex = -1;
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i][0] && rows[i][0].toString().toLowerCase().includes('invitation link')) {
+        linkRowIndex = i;
+        Logger.info(`[DEBUG] Found "Invitation Link" label at row ${i + 1}`);
+        break;
+      }
+    }
+    
+    if (linkRowIndex === -1) {
+      Logger.error('[DEBUG] Could not find "Invitation Link" row in Templates tab');
+      return [];
+    }
+    
+    // The links should be in the same row as "Invitation Link
+    const linkRow = rows[linkRowIndex] || [];
+    Logger.info(`[DEBUG] Video links from row ${linkRowIndex}: ${JSON.stringify(linkRow)}`);
+    
+    // Build ceremony objects by matching headers with links
+    const ceremonies: Array<Ceremony> = [];
+    
+    // Start from column 1 (index 1) since column 0 is "Main Invitation Message"
+    for (let i = 1; i < headers.length; i++) {
+      const ceremonyName = headers[i];
+      const driveLink = linkRow[i];
+      
+      // Skip empty headers or the main message column
+      if (!ceremonyName || ceremonyName.toString().toLowerCase().includes('main invitation')) {
+        continue;
+      }
+      
+      Logger.info(`[DEBUG] Processing column ${i} ceremony: "${ceremonyName}" with link: "${driveLink}"`);
+      
+      if (driveLink && driveLink.toString().includes('drive.google.com')) {
+        const driveFileId = GoogleDriveService.extractFileId(driveLink.toString());
+        
+        if (driveFileId) {
+          // Normalize ceremony name to match Guest object property names
+          const ceremonyId = this.normalizeCeremonyName(ceremonyName.toString());
+          
+          ceremonies.push({
+            id: ceremonyId,
+            name: ceremonyName.toString(),
+            driveFileId
+          });
+          
+          Logger.info(`[DEBUG] Added ceremony: ${ceremonyName} (${ceremonyId}) - Drive ID: ${driveFileId}`);
+        } else {
+          Logger.warn(`[DEBUG] Could not extract Drive file ID from: ${driveLink}`);
+        }
+      } else {
+        Logger.warn(`[DEBUG] Ceremony "${ceremonyName}" has no valid Drive link`);
+      }
+    }
+    
+    Logger.info(`[DEBUG] Found ${ceremonies.length} ceremonies with Drive files`);
+    return ceremonies;
+  }
+
+  /**
+   * Normalize ceremony name to match Guest object property names
+   * This ensures consistency between sheet columns and code
+   */
+  private normalizeCeremonyName(name: string): string {
+    // Convert to lowercase and remove spaces/special chars for consistent IDs
+    const normalized = name.toLowerCase()
+      .replace(/\s+/g, '')  // Remove all spaces
+      .replace(/[^a-z0-9]/g, '');  // Remove special characters
+    
+    // Map specific ceremony names to camelCase property names used in Guest interface
+    const ceremonyMap: Record<string, string> = {
+      'pengajian': 'pengajian',
+      'siraman': 'siraman',
+      'akadnikah': 'akadNikah',  // Map to camelCase
+      'syukuran': 'syukuran',
+      'reception': 'syukuran',  // Alternative name
+      'receptionsyukuran': 'syukuran'  // Alternative name
+    };
+    
+    const result = ceremonyMap[normalized] || normalized;
+    Logger.info(`[DEBUG] Normalized ceremony name "${name}" → "${result}"`);
+    return result;
   }
 
   /**
