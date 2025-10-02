@@ -133,14 +133,23 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
     let videosSent = true;
     
     try {
-      Logger.info(`Attempting to send invitation to ${guest.fullName}`);
+      Logger.info(`[WA DEBUG] ===== Starting send to ${guest.fullName} =====`);
+      Logger.info(`[WA DEBUG] Guest details: ${JSON.stringify({
+        fullName: guest.fullName,
+        phone: guest.whatsappNumber,
+        pengajian: guest.pengajian,
+        siraman: guest.siraman,
+        akadNikah: guest.akadNikah,
+        syukuran: guest.syukuran
+      })}`);
       
-      // Open chat with invite link
+      // Open chat and send text message
+      Logger.info(`[WA DEBUG] Processing action: OPEN_CHAT`);
       await this.sendMessageToWhatsAppTab('OPEN_CHAT', {
         whatsappInviteLink: guest.whatsappInviteLink
       });
       
-      // Send text message
+      Logger.info(`[WA DEBUG] Processing action: SEND_MESSAGE`);
       const messageResult = await this.sendMessageToWhatsAppTab('SEND_MESSAGE', {
         message: guest.invitationMessage
       });
@@ -153,7 +162,7 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
         const requiredVideos = this.getRequiredVideosForGuest(guest);
         
         if (requiredVideos.length > 0) {
-          Logger.info(`[WA DEBUG] Sending ${requiredVideos.length} videos to ${guest.fullName}`);
+          Logger.info(`[WA DEBUG] Preparing to send ${requiredVideos.length} videos`);
           
           videosSent = await this.sendMessageToWhatsAppTab('SEND_VIDEOS', {
             videos: requiredVideos
@@ -292,6 +301,9 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
       const ceremonies: Array<Ceremony> = result.eventCeremonies || [];
 
       Logger.info(`[WA DEBUG] Found ${ceremonies.length} configured ceremonies in storage`);
+      ceremonies.forEach(ceremony => {
+        Logger.info(`[WA DEBUG] Configured ceremony: ${ceremony.name} (${ceremony.id}) - Drive ID: ${ceremony.driveFileId}`);
+      });
 
       // Download each unique file
       for (const ceremonyId of uniqueCeremonies) {
@@ -333,33 +345,53 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
   private getRequiredVideosForGuest(guest: Guest): Array<{filename: string, blob: Blob}> {
     const videos = [];
     
+    Logger.info(`[WA DEBUG] Getting videos for ${guest.fullName}`);
+    Logger.info(`[WA DEBUG] Guest ceremonies - P:${guest.pengajian}, S:${guest.siraman}, A:${guest.akadNikah}, Sy:${guest.syukuran}`);
+    Logger.info(`[WA DEBUG] Cache has: ${Array.from(this.ceremonyFileCache.keys()).join(', ')}`);
+    
     // Check for common ceremony properties
     if (guest.pengajian && this.ceremonyFileCache.has('pengajian')) {
+      const blob = this.ceremonyFileCache.get('pengajian')!;
       videos.push({
         filename: 'Pengajian_Invitation.mp4',
-        blob: this.ceremonyFileCache.get('pengajian')!
+        blob: blob
       });
+      Logger.info(`[WA DEBUG] Added Pengajian video (${blob.size} bytes)`);
+    } else if (guest.pengajian) {
+      Logger.error(`[WA DEBUG] Guest needs Pengajian but file not in cache!`);
     }
     
     if (guest.siraman && this.ceremonyFileCache.has('siraman')) {
+      const blob = this.ceremonyFileCache.get('siraman')!;
       videos.push({
         filename: 'Siraman_Invitation.mp4', 
-        blob: this.ceremonyFileCache.get('siraman')!
+        blob: blob
       });
+      Logger.info(`[WA DEBUG] Added Siraman video (${blob.size} bytes)`);
+    } else if (guest.siraman) {
+      Logger.error(`[WA DEBUG] Guest needs Siraman but file not in cache!`);
     }
     
     if (guest.akadNikah && this.ceremonyFileCache.has('akad-nikah')) {
+      const blob = this.ceremonyFileCache.get('akad-nikah')!;
       videos.push({
         filename: 'AkadNikah_Invitation.mp4',
-        blob: this.ceremonyFileCache.get('akad-nikah')!
+        blob: blob
       });
+      Logger.info(`[WA DEBUG] Added Akad Nikah video (${blob.size} bytes)`);
+    } else if (guest.akadNikah) {
+      Logger.error(`[WA DEBUG] Guest needs Akad Nikah but file not in cache!`);
     }
     
     if (guest.syukuran && this.ceremonyFileCache.has('syukuran')) {
+      const blob = this.ceremonyFileCache.get('syukuran')!;
       videos.push({
         filename: 'Syukuran_Invitation.mp4',
-        blob: this.ceremonyFileCache.get('syukuran')!
+        blob: blob
       });
+      Logger.info(`[WA DEBUG] Added Syukuran video (${blob.size} bytes)`);
+    } else if (guest.syukuran) {
+      Logger.error(`[WA DEBUG] Guest needs Syukuran but file not in cache!`);
     }
 
     // Check for any other ceremony properties dynamically
@@ -369,10 +401,12 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
           key !== 'rsvpStatus' && key !== 'pengajian' && key !== 'siraman' && 
           key !== 'akadNikah' && key !== 'syukuran' && 
           guest[key] === true && this.ceremonyFileCache.has(key)) {
+        const blob = this.ceremonyFileCache.get(key)!;
         videos.push({
           filename: `${key.charAt(0).toUpperCase() + key.slice(1)}_Invitation.mp4`,
-          blob: this.ceremonyFileCache.get(key)!
+          blob: blob
         });
+        Logger.info(`[WA DEBUG] Added ${key} video (${blob.size} bytes)`);
       }
     });
     

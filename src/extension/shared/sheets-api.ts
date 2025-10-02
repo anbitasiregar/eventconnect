@@ -60,6 +60,9 @@ export class WhatsAppSheetsAPI {
 
       Logger.info("Headers: " + JSON.stringify(headers));
       Logger.info("Column map: " + JSON.stringify(columnMap));
+      
+      // Add validation: Check if ceremony columns exist
+      Logger.info(`[DEBUG] Ceremony column indices - Pengajian: ${columnMap.pengajian}, Siraman: ${columnMap.siraman}, Akad Nikah: ${columnMap.akadnikah}, Syukuran: ${columnMap.syukuran}`);
 
       // Filter and parse guests
       const pendingGuests: Guest[] = [];
@@ -70,6 +73,22 @@ export class WhatsAppSheetsAPI {
 
         // Only include guests with "Needs Invite (WA)" status
         if (rsvpStatus.trim() === 'Needs Invite (WA)') {
+          // Helper function to parse checkbox values
+          const parseCheckbox = (value: string | undefined): boolean => {
+            if (!value) return false;
+            const normalized = value.toString().toUpperCase().trim();
+            return normalized === 'TRUE' || normalized === 'YES' || normalized === 'X' || normalized === '1';
+          };
+
+          // Parse ceremony values from sheet
+          const pengajian = parseCheckbox(row[columnMap.pengajian]);
+          const siraman = parseCheckbox(row[columnMap.siraman]);
+          const akadNikah = parseCheckbox(row[columnMap.akadnikah]); // Note: camelCase conversion
+          const syukuran = parseCheckbox(row[columnMap.syukuran]);
+
+          // Add detailed logging for debugging
+          Logger.info(`[DEBUG] Row ${i + 1} (${row[columnMap.fullName]}): Pengajian="${row[columnMap.pengajian]}"→${pengajian}, Siraman="${row[columnMap.siraman]}"→${siraman}, Akad Nikah="${row[columnMap.akadnikah]}"→${akadNikah}, Syukuran="${row[columnMap.syukuran]}"→${syukuran}`);
+
           const guest: Guest = {
             rowNumber: i + 1, // 1-based row number (including header)
             fullName: row[columnMap.fullName] || '',
@@ -79,12 +98,14 @@ export class WhatsAppSheetsAPI {
             whatsappInviteLink: row[columnMap.whatsappInviteLink] || '',
             rsvpStatus: rsvpStatus,
             
-            // add ceremony attendance flags
-            pengajian: row[columnMap.pengajian] || false,
-            siraman: row[columnMap.siraman] || false,
-            akadNikah: row[columnMap.akadNikah] || false,
-            syukuran: row[columnMap.syukuran] || false
+            // Add ceremony attendance flags with proper boolean parsing
+            pengajian,
+            siraman,
+            akadNikah,
+            syukuran
           };
+
+          Logger.info(`[DEBUG] Guest added: ${guest.fullName} - Ceremonies: P=${guest.pengajian}, S=${guest.siraman}, A=${guest.akadNikah}, Sy=${guest.syukuran}`);
 
           // Validate required fields
           if (guest.fullName && guest.whatsappInviteLink) {
@@ -270,12 +291,28 @@ export class WhatsAppSheetsAPI {
   private mapColumns(headers: string[]): Record<string, number> {
     const columnMap: Record<string, number> = {};
     
+    // Map required columns from config
     for (const [key, columnName] of Object.entries(this.config.requiredColumns)) {
       const index = headers.findIndex(header => header.trim() === columnName);
       if (index !== -1) {
         columnMap[key] = index;
       }
     }
+
+    // Map ceremony columns dynamically
+    const ceremonyColumns = ['Pengajian', 'Siraman', 'Akad Nikah', 'Syukuran'];
+    ceremonyColumns.forEach(ceremonyName => {
+      const index = headers.findIndex(header => header.trim() === ceremonyName);
+      if (index !== -1) {
+        // Convert ceremony name to property name (e.g., "Akad Nikah" -> "akadNikah")
+        const propertyName = ceremonyName.toLowerCase()
+          .replace(/\s+/g, '') // Remove spaces
+          .replace(/^(.)/, (match) => match.toLowerCase()) // Ensure first letter is lowercase
+          .replace(/\s(.)/g, (match, char) => char.toUpperCase()); // camelCase
+        
+        columnMap[propertyName] = index;
+      }
+    });
 
     return columnMap;
   }
