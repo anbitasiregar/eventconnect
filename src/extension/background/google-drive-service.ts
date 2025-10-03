@@ -36,8 +36,12 @@ export class GoogleDriveService {
       }
 
       const blob = await response.blob();
-      Logger.info(`[Drive] Downloaded file from Drive: ${fileId} (${blob.size} bytes)`);
-      return blob;
+      
+      // Force correct MIME type for video files
+      const videoBlob = new Blob([blob], { type: 'video/mp4' });
+      Logger.info(`[Drive] Downloaded file: ${fileId} (${videoBlob.size} bytes, type: ${videoBlob.type})`);
+      
+      return videoBlob;
     } catch (error) {
       Logger.error(`[Drive] Failed to download file ${fileId}`, error as Error);
       throw error;

@@ -55,10 +55,13 @@ export class CeremonyStorage {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([CeremonyStorage.STORE_NAME], 'readwrite');
       const store = transaction.objectStore(CeremonyStorage.STORE_NAME);
-      const request = store.put(blob, ceremonyId);
+      
+      // Ensure MIME type is preserved in IndexedDB
+      const videoBlob = new Blob([blob], { type: 'video/mp4' });
+      const request = store.put(videoBlob, ceremonyId);
 
       request.onsuccess = () => {
-        Logger.info(`[IndexedDB] Stored video: ${ceremonyId} (${blob.size} bytes)`);
+        Logger.info(`[IndexedDB] Stored video: ${ceremonyId} (${videoBlob.size} bytes, type: ${videoBlob.type})`);
         resolve();
       };
 

@@ -293,8 +293,27 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
       
       console.log('[WA VIDEO] Found file input, creating file...');
       
-      // Create file from blob
-      const file = new File([videoBlob], filename, { type: 'video/mp4' });
+      // DIAGNOSTIC: Check blob properties
+      console.log('[WA VIDEO] Blob type:', videoBlob.type);
+      console.log('[WA VIDEO] Blob size:', videoBlob.size);
+      
+      // Create a test URL to verify blob is valid
+      const testUrl = URL.createObjectURL(videoBlob);
+      console.log('[WA VIDEO] Blob URL (test in browser):', testUrl);
+      // Don't revoke yet - we'll use the blob
+      
+      // Ensure blob has video/mp4 type and proper .mp4 extension
+      const typedBlob = new Blob([videoBlob], { type: 'video/mp4' });
+      
+      // Ensure filename ends with .mp4
+      const mp4Filename = filename.endsWith('.mp4') ? filename : `${filename}.mp4`;
+      
+      const file = new File([typedBlob], mp4Filename, { 
+        type: 'video/mp4',
+        lastModified: Date.now()
+      });
+      
+      console.log('[WA VIDEO] File created:', file.name, 'Type:', file.type, 'Size:', file.size);
       
       // Create a DataTransfer to simulate file selection
       const dataTransfer = new DataTransfer();
