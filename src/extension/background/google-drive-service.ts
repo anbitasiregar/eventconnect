@@ -26,6 +26,12 @@ export class GoogleDriveService {
       });
 
       if (!response.ok) {
+        // If 404 or 403, might be a scope issue - provide helpful error message
+        if (response.status === 404 || response.status === 403) {
+          Logger.error(`[Drive] Access denied (${response.status}). User may need to re-authenticate with updated permissions.`);
+          throw new Error(`Drive access denied: ${response.status}. Please sign out and sign in again to grant file access permissions.`);
+        }
+        
         throw new Error(`Drive download failed: ${response.status} ${response.statusText}`);
       }
 

@@ -265,59 +265,73 @@ class WhatsAppAutomationImpl implements WhatsAppAutomation {
       await this.clickElement(attachButton);
       await this.delay(1000);
       
-      // Look for document/media option
-      const mediaButton = document.querySelector('[data-testid="attach-document"]') ||
-                         document.querySelector('[aria-label*="Photos & Videos"]') ||
-                         document.querySelector('[title*="Photos & Videos"]');
+      // Click "Photos & videos" option from the menu
+      console.log('[WA VIDEO] Looking for Photos & videos option...');
       
-      if (mediaButton) {
-        Logger.info('[WA DEBUG] Found media button, clicking...');
-        await this.clickElement(mediaButton);
-        await this.delay(1000);
+      const photosVideoButton = document.querySelector('[data-testid="mi-attach-media"]') ||
+                                Array.from(document.querySelectorAll('li, button, div[role="button"]')).find(el => 
+                                  el.textContent?.toLowerCase().includes('photo') && 
+                                  el.textContent?.toLowerCase().includes('video')
+                                );
+      
+      if (!photosVideoButton) {
+        console.error('[WA VIDEO] Photos & videos button not found');
+        return false;
       }
       
-      // Create and trigger file input
-      const fileInput = document.createElement('input');
-      fileInput.type = 'file';
-      fileInput.accept = 'video/*';
-      fileInput.style.display = 'none';
-      document.body.appendChild(fileInput);
+      console.log('[WA VIDEO] Clicking Photos & videos...');
+      await this.clickElement(photosVideoButton);
+      await this.delay(500);
+      
+      // Now find the file input (appears after clicking Photos & videos)
+      const fileInput = document.querySelector('input[type="file"][accept*="image"],input[type="file"][accept*="video"]') as HTMLInputElement;
+      
+      if (!fileInput) {
+        console.error('[WA VIDEO] File input not found after clicking Photos & videos');
+        return false;
+      }
+      
+      console.log('[WA VIDEO] Found file input, creating file...');
       
       // Create file from blob
       const file = new File([videoBlob], filename, { type: 'video/mp4' });
+      
+      // Create a DataTransfer to simulate file selection
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
       fileInput.files = dataTransfer.files;
       
-      Logger.info(`[WA DEBUG] Created file input with video: ${filename}`);
+      // Trigger change event to notify WhatsApp
+      const changeEvent = new Event('change', { bubbles: true });
+      fileInput.dispatchEvent(changeEvent);
       
-      // Trigger file selection
-      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-      await this.delay(3000); // Wait for video to process
+      console.log('[WA VIDEO] File attached, waiting for preview...');
       
-      // Wait for send button to appear
-      let sendButton = null;
-      for (let i = 0; i < 10; i++) {
-        sendButton = document.querySelector('[data-testid="compose-btn-send"]') ||
-                    document.querySelector('[aria-label*="Send"]');
-        if (sendButton) break;
-        await this.delay(1000);
-      }
+      // Wait for the video preview/upload dialog to appear
+      await this.delay(3000);
+      
+      // Find and click the send button in the media preview
+      // Try multiple selectors as WhatsApp's UI changes
+      const sendButton = document.querySelector('[data-testid="send"]') ||
+                        document.querySelector('[data-icon="send"]') ||
+                        document.querySelector('span[data-testid="send"]') ||
+                        document.querySelector('span[data-icon="send"]') ||
+                        document.querySelector('button[aria-label*="Send"]');
       
       if (!sendButton) {
-        Logger.error('[WA DEBUG] Send button not found for video');
-        document.body.removeChild(fileInput);
+        console.error('[WA VIDEO] Send button not found in media preview');
         return false;
       }
       
-      Logger.info('[WA DEBUG] Found send button for video, sending...');
+      console.log('[WA VIDEO] Found send button, sending video...');
       await this.clickElement(sendButton);
-      await this.delay(4000); // Wait longer for video upload
       
-      // Clean up
-      document.body.removeChild(fileInput);
+      // Wait for video to upload and send
+      // 26 MB videos upload quickly
+      console.log('[WA VIDEO] Waiting for video upload...');
+      await this.delay(4000);
       
-      Logger.info('[WA DEBUG] Video sent successfully');
+      console.log(`[WA VIDEO] ✓ Video sent successfully: ${filename}`);
       return true;
       
     } catch (error) {

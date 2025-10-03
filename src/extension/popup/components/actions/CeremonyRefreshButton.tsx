@@ -76,6 +76,12 @@ export const CeremonyRefreshButton: React.FC = () => {
           {message}
         </div>
       )}
+      
+      {/* Re-authentication notice for Drive access issues */}
+      <div className="mt-2 p-2 rounded text-xs bg-blue-50 text-blue-700 border border-blue-200">
+        <p className="font-medium">💡 Tip:</p>
+        <p>If ceremony video downloads fail, you may need to sign out and sign back in to grant updated file access permissions.</p>
+      </div>
     </div>
   );
 };

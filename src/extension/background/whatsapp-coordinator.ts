@@ -452,6 +452,45 @@ class WhatsAppCoordinatorImpl implements WhatsAppCoordinator {
         });
       }
       
+      // For SEND_VIDEOS, send to content script
+      if (action === 'SEND_VIDEOS') {
+        const tabId = this.currentSendingProcess?.whatsappTabId;
+        if (!tabId) {
+          throw new Error('No WhatsApp tab available');
+        }
+        
+        Logger.info(`[WA DEBUG] Sending videos to tab ${tabId}`);
+        
+        // Send videos to content script with proper error handling
+        return new Promise((resolve, reject) => {
+          chrome.tabs.sendMessage(tabId, {
+            type: 'WHATSAPP_AUTOMATION',
+            action: 'SEND_VIDEOS',
+            videos: payload.videos
+          }, (response) => {
+            if (chrome.runtime.lastError) {
+              Logger.error(`[WA DEBUG] Chrome runtime error: ${chrome.runtime.lastError.message}`);
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
+            
+            if (!response) {
+              Logger.error(`[WA DEBUG] No response from content script`);
+              reject(new Error('No response from content script'));
+              return;
+            }
+            
+            Logger.info(`[WA DEBUG] Content script video response:`, response);
+            
+            if (response.success) {
+              resolve(response.data);
+            } else {
+              reject(new Error(response.error || 'Video send failed - content script returned false'));
+            }
+          });
+        });
+      }
+      
       throw new Error(`Unknown action: ${action}`);
       
     } catch (error) {
