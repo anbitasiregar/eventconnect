@@ -3,11 +3,10 @@
   "version": "1.0.0",
   "description": "EventConnect Chrome Extension",
   "scripts": {
-    "dev": "webpack --mode=development --watch",
-    "build": "webpack --config webpack.simple.config.js --mode=production",
-    "type-check": "tsc --noEmit",
-    "test": "npx jest --config __tests__/setup/jest.config.js",
-    "test:watch": "npx jest --config __tests__/setup/jest.config.js --watch"
+    "build": "webpack --config webpack.config.js",
+    "build:prod": "NODE_ENV=production webpack --config webpack.config.js",
+    "clean": "rm -rf extension-dist",
+    "dev": "webpack --watch --config webpack.config.js"
   },
   "dependencies": {
     "@eventconnect/shared-types": "*",

@@ -1,16 +1,15 @@
 const path = require('path');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
-
-const isDevelopment = process.env.NODE_ENV !== 'production';
+const webpack = require('webpack');
 
 module.exports = {
-  mode: isDevelopment ? 'development' : 'production',
-  devtool: isDevelopment ? 'inline-source-map' : false,
+  mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
+  devtool: process.env.NODE_ENV === 'production' ? false : 'inline-source-map',
   
   entry: {
-    'background/service-worker': './background/service-worker.ts',
-    'popup/popup': './popup/popup.tsx',
-    'content/content-script': './content/content-script.ts'
+    'background/service-worker': path.resolve(__dirname, 'background/service-worker.ts'),
+    'popup/popup': path.resolve(__dirname, 'popup/popup.tsx'),
+    'content/content-script': path.resolve(__dirname, 'content/content-script.ts')
   },
   
   output: {
@@ -22,7 +21,25 @@ module.exports = {
   resolve: {
     extensions: ['.ts', '.tsx', '.js', '.jsx'],
     alias: {
-      '@': path.resolve(__dirname, './')
+      '@': path.resolve(__dirname, './'),
+      '@eventconnect/shared-types': path.resolve(__dirname, '../../packages/shared-types/src')
+    },
+    fallback: {
+      "process": false,
+      "buffer": false,
+      "path": false,
+      "os": false,
+      "crypto": false,
+      "fs": false,
+      "stream": false,
+      "util": false,
+      "url": false,
+      "querystring": false,
+      "http": false,
+      "https": false,
+      "net": false,
+      "tls": false,
+      "zlib": false
     }
   },
   
@@ -30,19 +47,16 @@ module.exports = {
     rules: [
       {
         test: /\.tsx?$/,
-        use: [
-          {
-            loader: 'ts-loader',
-            options: {
-              configFile: path.resolve(__dirname, 'tsconfig.json')
-            }
-          }
-        ],
+        use: 'ts-loader',
         exclude: /node_modules/
       },
       {
         test: /\.css$/,
-        use: ['style-loader', 'css-loader']
+        use: [
+          'style-loader',
+          'css-loader',
+          'postcss-loader'
+        ]
       }
     ]
   },
@@ -50,43 +64,22 @@ module.exports = {
   plugins: [
     new CopyWebpackPlugin({
       patterns: [
-        {
-          from: 'manifest.json',
-          to: 'manifest.json'
-        },
-        {
-          from: 'popup/index.html',
-          to: 'popup/index.html'
-        },
-        {
-          from: 'assets',
-          to: 'assets'
-        }
+        { from: 'manifest.json', to: 'manifest.json' },
+        { from: 'popup/index.html', to: 'popup/index.html' },
+        { from: 'assets', to: 'assets' }
       ]
+    }),
+    new webpack.DefinePlugin({
+      'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
+      'process.env.GOOGLE_CLIENT_ID': JSON.stringify(process.env.GOOGLE_CLIENT_ID || '554258518238-9fs00eer4665qggru39lfmi4o6jrq42n.apps.googleusercontent.com'),
+      'process.env.API_BASE_URL': JSON.stringify(process.env.API_BASE_URL || 'https://api.eventconnect.app')
     })
   ],
   
+  // NO splitChunks for browser extensions!
   optimization: {
-    splitChunks: {
-      chunks: 'all',
-      cacheGroups: {
-        vendor: {
-          test: /[\\/]node_modules[\\/]/,
-          name: 'vendors',
-          chunks: 'all'
-        }
-      }
-    }
+    splitChunks: false
   },
   
-  // Chrome extension specific configurations
-  target: 'web',
-  resolve: {
-    fallback: {
-      // Exclude Node.js polyfills not needed in extension context
-      "fs": false,
-      "path": false,
-      "crypto": false
-    }
-  }
+  target: 'web'
 };
