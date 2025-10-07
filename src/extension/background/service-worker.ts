@@ -10,12 +10,14 @@ import { MessageHandler } from './message-handler';
 import { config, validateConfig } from './config';
 import { Logger, initializeLogger } from '../shared/logger';
 import { setStorageItem, getStorageItem } from '../shared/storage';
+import { WhatsAppCloudService } from './whatsapp-cloud-service';
 
 // Initialize services
 let authService: GoogleAuthService;
 let apiClient: ApiClient;
 let sheetsService: GoogleSheetsService;
 let messageHandler: MessageHandler;
+let whatsappCloudService: WhatsAppCloudService;
 
 // Service worker installation
 chrome.runtime.onInstalled.addListener(async (details) => {
@@ -112,6 +114,17 @@ async function initializeServices(): Promise<void> {
     
     // Initialize message handler
     messageHandler = new MessageHandler(authService, apiClient, sheetsService);
+
+    // Get Cloudflare Worker URL from storage
+    const { workerUrl } = await chrome.storage.local.get('workerUrl');
+    
+    if (!workerUrl) {
+      Logger.warn('WhatsApp Cloud Worker URL not configured');
+    } else {
+      // Initialize whatsapp cloud service
+      whatsappCloudService = new WhatsAppCloudService(workerUrl);
+      Logger.info('WhatsApp Cloud Service initialized');
+    }
     
     Logger.info('All services initialized successfully');
   } catch (error) {
