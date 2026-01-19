@@ -17,7 +17,7 @@ const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',      // Sheets read/write
   'https://www.googleapis.com/auth/calendar',          // Calendar integration
   'https://www.googleapis.com/auth/gmail.send',        // Email sending
-  'https://www.googleapis.com/auth/drive.file',        // Drive file access
+  'https://www.googleapis.com/auth/drive.readonly',    // Drive file read access (for existing files)
   'https://www.googleapis.com/auth/userinfo.profile'   // Basic profile info
 ];
 

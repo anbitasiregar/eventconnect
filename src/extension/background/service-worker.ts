@@ -6,16 +6,21 @@
 import { GoogleAuthService } from './google-auth';
 import { ApiClient } from './api-client';
 import { GoogleSheetsService } from './sheets-service';
+import { GoogleDriveService } from './google-drive-service';
 import { MessageHandler } from './message-handler';
+import { CeremonyStorage } from './ceremony-storage';
 import { config, validateConfig } from './config';
 import { Logger, initializeLogger } from '../shared/logger';
 import { setStorageItem, getStorageItem } from '../shared/storage';
+import './whatsapp-coordinator'; // Initialize WhatsApp coordinator
 
 // Initialize services
 let authService: GoogleAuthService;
 let apiClient: ApiClient;
 let sheetsService: GoogleSheetsService;
+let driveService: GoogleDriveService;
 let messageHandler: MessageHandler;
+let ceremonyStorage: CeremonyStorage;
 
 // Service worker installation
 chrome.runtime.onInstalled.addListener(async (details) => {
@@ -109,6 +114,19 @@ async function initializeServices(): Promise<void> {
     
     // Initialize Google Sheets service
     sheetsService = new GoogleSheetsService(() => authService.getValidToken());
+    
+    // Initialize Google Drive service
+    driveService = new GoogleDriveService(async () => {
+      const token = await authService.getValidToken();
+      if (!token) {
+        throw new Error('No valid authentication token available');
+      }
+      return token;
+    });
+    
+    // Initialize ceremony storage
+    ceremonyStorage = new CeremonyStorage();
+    Logger.info('Ceremony storage initialized');
     
     // Initialize message handler
     messageHandler = new MessageHandler(authService, apiClient, sheetsService);
@@ -244,3 +262,12 @@ async function refreshCurrentEventContext(): Promise<void> {
     Logger.error('Failed to refresh event context', error as Error);
   }
 }
+
+// Export services for use in other modules
+export { driveService };
+
+// Export message handler for WhatsApp coordinator
+export { messageHandler };
+
+// Export ceremony storage
+export { ceremonyStorage };

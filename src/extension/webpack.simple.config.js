@@ -9,7 +9,8 @@ module.exports = {
   entry: {
     'background/service-worker': path.resolve(__dirname, 'background/service-worker.ts'),
     'popup/popup': path.resolve(__dirname, 'popup/popup.tsx'),
-    'content/content-script': path.resolve(__dirname, 'content/content-script.ts')
+    'content/content-script': path.resolve(__dirname, 'content/content-script.ts'),
+    'content/whatsapp-automation': path.resolve(__dirname, 'content/whatsapp-automation.ts')
   },
   
   output: {

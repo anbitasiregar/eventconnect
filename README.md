@@ -1,55 +1,54 @@
 # EventConnect
 
-AI-powered event planning platform with Chrome extension and Google Sheets integration.
+## Overview
+Chrome extension-first event planning platform with Google Sheets integration.
+
+## Development Setup
+
+### Prerequisites
+- Node.js 18+
+- Chrome browser
+- Google Cloud Console project with Sheets/Calendar/Gmail APIs enabled
+
+### Installation
+```bash
+cd src/extension
+npm install
+npm run build:dev
+```
+
+### Loading in Chrome
+1. Open Chrome and go to `chrome://extensions/`
+2. Enable "Developer mode"
+3. Click "Load unpacked" and select `src/extension/extension-dist/`
+
+### Development Workflow
+```bash
+npm run dev          # Watch mode for development
+npm run build        # Production build
+npm run test:all     # Run all tests
+npm run lint         # Code quality checks
+```
 
 ## Architecture
 
-EventConnect uses a simplified, Chrome extension-first architecture:
+### Components
+- **Background Script:** Google OAuth, Sheets API, message routing
+- **Popup Interface:** React app with action buttons
+- **Content Script:** Event site detection and context awareness
 
-- **Chrome Extension** (`src/extension/`) - Primary user interface with contextual awareness
-- **Backend API** (`src/api/`) - Simple Node.js server handling Google APIs and AI agents  
-- **Web App** (`src/web/`) - React onboarding and complex workflows
-- **Shared Packages** (`packages/`) - Common types and Google Sheets templates
+### Data Flow
+1. User authenticates via Google OAuth
+2. Extension connects to user's event Google Sheets
+3. Action buttons perform read/write operations on sheets
+4. Context script detects event-related websites
 
-## Key Features
+## Testing
+- Unit tests: Individual components and utilities
+- Integration tests: API integrations and component communication  
+- E2E tests: Complete user workflows
 
-- **Chrome Extension-First**: Primary interaction through browser extension
-- **Google Sheets Integration**: Event data stored in user's Google Sheets
-- **AI Agent System**: Event Controller Agent (ECP) coordinates specialized agents
-- **Button-Based UI**: Approval workflows instead of chat interfaces
-- **Google Workspace Native**: Built on Google's ecosystem for security and familiarity
-
-## Getting Started
-
+## Deployment
 ```bash
-# Install dependencies
-npm install
-
-# Start development environment
-npm run dev
-
-# Build all packages
-npm run build
+npm run package  # Creates distributable .zip file
 ```
-
-## Project Structure
-
-```
-eventconnect/
-├── packages/
-│   ├── shared-types/          # TypeScript interfaces
-│   └── sheets-templates/      # Google Sheets templates
-├── src/
-│   ├── extension/            # Chrome extension (primary UI)
-│   ├── api/                  # Node.js backend
-│   └── web/                  # React web app
-```
-
-## Development
-
-This is a monorepo using npm workspaces. Each package can be developed independently:
-
-- `npm run dev:extension` - Chrome extension development
-- `npm run dev:api` - Backend API development  
-- `npm run dev:web` - Web app development
-- `npm run dev` - All services concurrently

@@ -25,7 +25,16 @@ export type MessageType =
   | 'EXECUTE_ACTION'
   | 'GET_ACTION_SUGGESTIONS'
   // User info
-  | 'GET_USER_INFO';
+  | 'GET_USER_INFO'
+  // WhatsApp
+  | 'GET_PENDING_WHATSAPP_GUESTS'
+  | 'UPDATE_SHEET_STATUS'
+  | 'VALIDATE_WHATSAPP_SHEET' // this is never called, no one uses this message type
+  | 'START_BULK_WHATSAPP_SEND'
+  | 'GET_CEREMONIES'
+  | 'DOWNLOAD_CEREMONY_FILE'
+  | 'GET_PENDING_WHATSAPP_GUESTS_WITH_CEREMONIES'
+  ;
 
 export interface ExtensionMessage {
   type: MessageType;
